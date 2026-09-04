@@ -243,7 +243,12 @@
     }
 
     async searchRelated(action, event, rangeSeconds = DEFAULT_RANGE_SECONDS, limit = DEFAULT_LIMIT) {
-      const clusterId = this.clusterId || (await this.getClusters())[0]?.id;
+      let clusterId = this.clusterId;
+      if (!clusterId) {
+        const clusters = await this.getClusters();
+        if (clusters.length > 1) throw new Error("KUMA вернула несколько кластеров хранения. Выберите нужный в настройках KumApe");
+        clusterId = clusters[0]?.id;
+      }
       if (!clusterId) throw new Error("KUMA не вернула ни одного доступного кластера хранения");
       const body = {
         clusterID: clusterId,

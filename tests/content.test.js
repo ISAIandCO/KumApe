@@ -21,3 +21,44 @@ test("extracts route identifiers without depending on KUMA DOM", () => {
   assert.equal(context.eventId, "e1");
   assert.equal(context.tenantId, "t1");
 });
+
+test("extracts KUMA 4.6 event fields and raw text from marked DOM", () => {
+  const field = (id, data, displayed = data) => ({
+    getAttribute: (name) => ({ "kuma-id": id, "kuma-data": data }[name] ?? null),
+    querySelector: () => ({ textContent: displayed }),
+  });
+  const rawNode = {
+    tagName: "PRE",
+    textContent: "<30>1 2024-01-01T00:00:00Z example.invalid app - - - synthetic event",
+    parentElement: { textContent: "Исходное событие" },
+  };
+  const fields = [
+    field("TenantID", "tenant-1", "Synthetic tenant"),
+    field("Timestamp", "1704067200000", "01.01.2024 00:00:00.000"),
+    field("Message", "service stopped"),
+    field("DeviceHostName", "host-01"),
+    field("SpaceID", "", "Synthetic space"),
+  ];
+  const documentObject = {
+    title: "KUMA",
+    body: { innerText: "KUMA event" },
+    querySelector: (selector) => selector === '[kuma-section="raw"] pre' ? rawNode : null,
+    querySelectorAll: (selector) => ({
+      "pre, textarea, code": [rawNode],
+      '[kuma-section="event-field"][kuma-id]': fields,
+      "table, dl, [role='dialog'], [class*='detail']": [],
+      pre: [rawNode],
+    }[selector] || []),
+  };
+
+  const context = page.extractPageContext(documentObject, "https://kuma.example.local/events");
+  assert.deepEqual({ ...context.event }, {
+    TenantID: "tenant-1",
+    Timestamp: "1704067200000",
+    Message: "service stopped",
+    DeviceHostName: "host-01",
+    SpaceID: "Synthetic space",
+  });
+  assert.equal(context.raw, rawNode.textContent);
+  assert.equal(context.source, "kuma-fields");
+});

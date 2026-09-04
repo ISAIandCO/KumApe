@@ -43,6 +43,22 @@
     return candidates;
   }
 
+  function extractFromKumaFields(documentObject) {
+    const event = Object.create(null);
+    for (const node of documentObject.querySelectorAll('[kuma-section="event-field"][kuma-id]')) {
+      const key = node.getAttribute("kuma-id")?.trim() || "";
+      const attributeValue = node.getAttribute("kuma-data");
+      const displayedValue = node.querySelector(":scope > span:nth-of-type(2)")?.textContent?.trim() || "";
+      const value = attributeValue === null || attributeValue === "" ? displayedValue : attributeValue;
+      if (/^[A-Za-z][A-Za-z0-9_.]{1,127}$/.test(key) && value) event[key] = value;
+    }
+    const raw = JSON.stringify(event, null, 2);
+    const score = candidateScore(event, raw, "KUMA event fields");
+    return Object.keys(event).length >= 3 && score >= 1000
+      ? [{ event, raw, source: "kuma-fields", score }]
+      : [];
+  }
+
   function extractFromTables(documentObject) {
     const candidates = [];
     for (const container of documentObject.querySelectorAll("table, dl, [role='dialog'], [class*='detail']")) {
@@ -68,6 +84,8 @@
   }
 
   function findRawText(documentObject) {
+    const markedRaw = documentObject.querySelector('[kuma-section="raw"] pre')?.textContent?.trim();
+    if (markedRaw) return markedRaw;
     const nodes = [...documentObject.querySelectorAll("pre")];
     return nodes
       .map((node) => ({ text: node.textContent.trim(), label: node.parentElement?.textContent?.slice(0, 160) || "" }))
@@ -87,10 +105,10 @@
   }
 
   function extractPageContext(documentObject = document, urlValue = location.href) {
-    const candidates = [...extractFromTextNodes(documentObject), ...extractFromTables(documentObject)]
+    const candidates = [...extractFromTextNodes(documentObject), ...extractFromKumaFields(documentObject), ...extractFromTables(documentObject)]
       .sort((a, b) => b.score - a.score);
     const best = candidates[0] || null;
-    const raw = best?.raw || findRawText(documentObject);
+    const raw = findRawText(documentObject) || best?.raw || null;
     const title = documentObject.title || "";
     return {
       ...routeContext(urlValue),
@@ -103,5 +121,5 @@
     };
   }
 
-  global.KumApePage = Object.freeze({ candidateScore, extractPageContext, parseJsonCandidate, routeContext });
+  global.KumApePage = Object.freeze({ candidateScore, extractFromKumaFields, extractPageContext, parseJsonCandidate, routeContext });
 })(globalThis);

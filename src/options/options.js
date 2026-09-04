@@ -16,7 +16,7 @@ async function send(message) {
 
 function renderClusters(clusters, selected = "") {
   const select = $("#cluster-id");
-  select.replaceChildren(new Option("Определять автоматически", ""));
+  select.replaceChildren(new Option("Определять автоматически, если он один", ""));
   for (const cluster of clusters) select.add(new Option(cluster.name || cluster.id, cluster.id));
   select.value = selected;
 }

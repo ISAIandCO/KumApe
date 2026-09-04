@@ -11,8 +11,8 @@
     <header><img src="../assets/icons/icon-96.png" alt=""><div><h1>KumApe</h1><p>Подключение к Kaspersky KUMA 4.6</p></div></header>
     <form id="settings">
       <label>Адрес веб-интерфейса KUMA<input id="ui-origin" type="url" required placeholder="https://kuma.example.local:7220"></label>
-      <label>Адрес REST API<input id="api-origin" type="url" required placeholder="https://kuma.example.local:7223"></label>
-      <label>Кластер хранения<select id="cluster-id"><option value="">Определять автоматически</option></select></label>
+      <label>Адрес API KUMA Core<input id="api-origin" type="url" required placeholder="https://kuma.example.local:7223"><small class="hint">В распределённой установке укажите Core, а не коллектор или storage. Для HA — адрес балансировщика/VIP.</small></label>
+      <label>Кластер хранения<select id="cluster-id"><option value="">Определять автоматически, если он один</option></select></label>
       <label>API-токен<input id="api-token" type="password" autocomplete="off" placeholder="Не сохранён в этой сессии Firefox"></label>
       <p class="hint">Токен хранится только в памяти текущей сессии Firefox и удаляется при закрытии браузера. Логин и пароль KUMA расширение не запрашивает.</p>
       <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
