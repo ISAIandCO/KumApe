@@ -25,6 +25,7 @@ async function load() {
   const { config } = await send({ type: "config:get" });
   $("#ui-origin").value = config.uiOrigin || "";
   $("#api-origin").value = config.apiOrigin || "";
+  $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
   renderClusters([], config.clusterId || "");
   $("#api-token").placeholder = config.tokenPresent ? "Токен уже загружен в текущей сессии" : "Не сохранён в этой сессии Firefox";
 }
@@ -32,9 +33,17 @@ async function load() {
 async function save() {
   const uiOrigin = api.normalizeOrigin($("#ui-origin").value);
   const apiOrigin = api.normalizeOrigin($("#api-origin").value);
+  let parsedProfiles;
+  try {
+    parsedProfiles = JSON.parse($("#field-profiles").value);
+  } catch (error) {
+    throw new Error(`Профили полей: некорректный JSON (${error.message})`);
+  }
+  const fieldProfiles = api.normalizeFieldProfiles(parsedProfiles);
   const granted = await browser.permissions.request({ origins: [...new Set([`${uiOrigin}/*`, `${apiOrigin}/*`])] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
-  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value });
+  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles });
+  $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
   const token = $("#api-token").value.trim();
   if (token) {
     await browser.storage.session.set({ apiToken: token });
@@ -71,6 +80,14 @@ $("#load-clusters").addEventListener("click", async () => {
     renderClusters(response.clusters, selected);
     show(response.clusters);
   } catch (error) { show(error.message, true); }
+});
+$("#restore-profiles").addEventListener("click", () => {
+  $("#field-profiles").value = JSON.stringify(api.BUILTIN_FIELD_PROFILES, null, 2);
+  show(`Подставлено профилей: ${api.BUILTIN_FIELD_PROFILES.length}. Нажмите «Сохранить», чтобы применить.`);
+});
+$("#clear-profiles").addEventListener("click", () => {
+  $("#field-profiles").value = "[]";
+  show("Профили очищены. После сохранения останется общий набор нормализованных полей.");
 });
 $("#ui-origin").addEventListener("change", () => {
   if ($("#api-origin").value) return;

@@ -15,6 +15,11 @@
       <label>Кластер хранения<select id="cluster-id"><option value="">Определять автоматически, если он один</option></select></label>
       <label>API-токен<input id="api-token" type="password" autocomplete="off" placeholder="Не сохранён в этой сессии Firefox"></label>
       <p class="hint">Токен хранится только в памяти текущей сессии Firefox и удаляется при закрытии браузера. Логин и пароль KUMA расширение не запрашивает.</p>
+      <label>Профили полей related search
+        <textarea id="field-profiles" rows="22" spellcheck="false" required></textarea>
+        <small class="hint">Профиль выбирается по полям из <code>when</code>. Для совпавшего события массив в <code>fields</code> заменяет поля извлечения и SQL-поиска соответствующей группы. Допустимые группы: ip, host, account, process, command, file, hash, domain, url.</small>
+      </label>
+      <div class="actions"><button id="restore-profiles" type="button">Вернуть рекомендуемые профили</button><button id="clear-profiles" type="button">Только общие поля</button></div>
       <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
     </form>
     <section>

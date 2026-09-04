@@ -5,14 +5,15 @@
 Экспериментальное Firefox-расширение для аналитика Kaspersky KUMA. Идея та же, что у [ApePatrol](https://github.com/ISAIandCO/ApePatrol): меньше ручного копирования между карточкой события, поиском и TI-порталами. Реализация при этом отдельная и рассчитана на модель данных и API KUMA.
 
 > [!IMPORTANT]
-> Версия `0.1.3` — технический MVP для KUMA 4.6. Работа публичного REST API опирается на документацию KUMA и библиотеку `KUMA-Community/kapi`; private API нужно подтвердить на реальной инсталляции KUMA 4.6.
+> Версия `0.1.4` — технический MVP для KUMA 4.6. Работа публичного REST API опирается на документацию KUMA и библиотеку `KUMA-Community/kapi`; private API нужно подтвердить на реальной инсталляции KUMA 4.6.
 
 ## Что уже есть
 
 - чтение полей открытой карточки KUMA через `kuma-id` / `kuma-data`;
 - чтение Raw из области «Исходное событие»;
 - копирование события и ссылки на него;
-- связанные события по IP, узлу, учетной записи, процессу и хешу;
+- связанные события по IP, узлу, учетной записи, процессу, command line, файлу, хешу, домену и URL;
+- редактируемые профили полей для Windows Security, Sysmon, PowerShell и Linux auditd;
 - поиск через `POST /api/v3/events` с выбором storage cluster;
 - IOC-ссылки на Kaspersky OpenTIP и VirusTotal — только после явного клика;
 - read-only получение ресурса correlation rule по его ID;
@@ -73,7 +74,9 @@ Core API: https://kuma.example.local:7223
 
 Для API-токена нужны права как минимум на чтение кластеров хранения и событий. Если используется внутренний сертификат, сначала откройте оба адреса в Firefox и подтвердите доверие сертификату.
 
-Подробности и статус проверенных endpoint-ов: [docs/kuma-api-notes.md](docs/kuma-api-notes.md). Сценарий проверки на реальной KUMA: [docs/manual-tests.md](docs/manual-tests.md).
+В настройках находится JSON-редактор профилей related search. Рекомендуемый стартовый набор включён по умолчанию; его можно изменить под локальные normalizer/extra normalization/extended schema или полностью отключить, оставив общие нормализованные поля.
+
+Подробности и статус endpoint-ов: [docs/kuma-api-notes.md](docs/kuma-api-notes.md). Карта REST, web API, DOM и полей событий: [docs/kuma-surfaces-and-fields.md](docs/kuma-surfaces-and-fields.md). Сценарий проверки на реальной KUMA: [docs/manual-tests.md](docs/manual-tests.md).
 
 ## Почему не копия ApePatrol
 
@@ -83,7 +86,7 @@ Core API: https://kuma.example.local:7223
 карточка KUMA → content extractor → popup → background → KumaAdapter → read-only API
 ```
 
-DOM используется только для получения открытого события. Поиск выполняется через публичный REST API, где это возможно. Private API изолирован в адаптере и не считается стабильным, пока его не подтвердит Network/Fetch/XHR в KUMA 4.6.
+DOM используется для получения открытого события. Поиск выполняется через публичный REST API, где это возможно. Read-only web API рассматривается как отдельная поверхность: он изолирован в адаптере и не считается стабильным, пока его не подтвердит Network/Fetch/XHR в KUMA 4.6.
 
 ## Что пока не включено
 
