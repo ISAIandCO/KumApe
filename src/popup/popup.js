@@ -86,7 +86,7 @@ async function renderRelated() {
   container.replaceChildren();
   state.relatedActions = [];
   if (!state.context?.event) {
-    container.textContent = "Нужен JSON текущего события.";
+    container.textContent = "Нужны структурированные поля текущего события.";
     return;
   }
   const response = await send({ type: "related:actions", event: state.context.event });
@@ -130,7 +130,7 @@ async function renderIocs() {
   const container = $("#ioc-list");
   container.replaceChildren();
   if (!state.context?.event) {
-    container.textContent = "Нужен JSON текущего события.";
+    container.textContent = "Нужны структурированные поля текущего события.";
     return;
   }
   const response = await send({ type: "ioc:list", event: state.context.event });

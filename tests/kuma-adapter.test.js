@@ -77,3 +77,15 @@ test("sends a bounded read-only events request through the adapter", async () =>
   assert.equal(calls[0].body.period.from, "2026-09-04T07:55:00.000Z");
   assert.deepEqual(result.events, [{ ID: "event-1" }]);
 });
+
+test("requires a storage cluster choice when Core exposes several", async () => {
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+    clusterId: "",
+    token: "secret",
+  }, async () => ({ clusters: [{ id: "cluster-1" }, { id: "cluster-2" }] }));
+  const event = { Timestamp: "2026-09-04T08:00:00Z", SourceAddress: "192.0.2.1" };
+  const [action] = api.buildRelatedActions(event);
+  await assert.rejects(() => adapter.searchRelated(action, event), /несколько кластеров/);
+});

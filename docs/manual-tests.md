@@ -21,8 +21,8 @@
 
 Проверить обычное, correlation и вложенное в alert событие.
 
-- [ ] При открытой области Raw popup показывает полный JSON.
-- [ ] При закрытой области Raw расширение либо получает поля карточки, либо явно просит открыть Raw.
+- [ ] Popup собирает поля карточки из `kuma-id` / `kuma-data`, даже если JSON на странице отсутствует.
+- [ ] При открытой области «Исходное событие» расширение отдельно получает Raw-текст.
 - [ ] Из нескольких `pre` выбирается именно событие, а не произвольный JSON интерфейса.
 - [ ] «Копировать» помещает валидный JSON или Raw без изменений.
 - [ ] «Копировать ссылку» возвращает URL текущей вкладки.
@@ -65,6 +65,7 @@
 | Web session | `GET /api/whoami` | Не проверено | |
 | Clusters | `GET /api/v3/events/clusters` | Не проверено | |
 | Event search | `POST /api/v3/events` | Не проверено | |
-| Raw event DOM | `pre` / другое | Не проверено | |
+| Event fields DOM | `[kuma-section="event-field"]` + `kuma-id` / `kuma-data` | Подтверждено образцом | |
+| Raw event DOM | `[kuma-section="raw"] pre` | Подтверждено образцом | |
 | Correlation rule ID | `CorrelationRuleID` / другое | Не проверено | |
 | Correlation rule resource | `/api/private/resources/correlationRule/{id}` | Не проверено | |

@@ -11,9 +11,12 @@
 | Поиск событий | `POST :7223/api/v3/events` | `KUMA-Community/kapi` | Нужна проверка на целевой KUMA |
 | Проверка web-сессии | `GET :7220/api/whoami` | `KUMA-Community/kapi` private client | Нужна проверка на KUMA 4.6 |
 | Чтение correlation rule | `GET :7220/api/private/resources/correlationRule/{id}` | `KUMA-Community/kapi` private client | Нужна проверка на KUMA 4.6 |
-| Извлечение открытого Raw | `pre` / JSON / таблица полей | `KUMA-Community/kuma-improver` и DOM fallback | Нужна проверка верстки KUMA 4.6 |
+| Извлечение полей карточки | `[kuma-section="event-field"]`, `kuma-id`, `kuma-data` | HTML карточки KUMA 4.6 | Подтверждено предоставленным образцом |
+| Извлечение Raw | `[kuma-section="raw"] pre` | HTML карточки KUMA 4.6 | Подтверждено предоставленным образцом |
 
 ## Public Events API
+
+Публичный API слушает на KUMA Core: порт `7223` является стандартным портом API-запросов к Core. Коллекторы и storage-узлы в настройках KumApe не указываются. В HA-конфигурации используется адрес балансировщика, обслуживающего порт `7223`. Физическое размещение хранилища скрыто за Core; запрос выбирает логический storage cluster полем `clusterID`.
 
 Текущая библиотека `KUMA-Community/kapi` строит запрос так:
 
@@ -77,6 +80,16 @@ GET /api/private/resources/correlationRule/{rule-id}
 ```
 
 Если endpoint изменился в 4.6, нужно заменить только метод `getCorrelationRule()` в `src/shared/kuma-adapter.js`; popup и извлечение события от этого не зависят.
+
+## DOM карточки события
+
+В предоставленном HTML JSON отсутствует. KUMA уже размечает каждое поле машинными атрибутами:
+
+```html
+<div kuma-section="event-field" kuma-id="Timestamp" kuma-data="1704067200000">…</div>
+```
+
+KumApe берёт имя из `kuma-id`, исходное значение из `kuma-data`, а видимый текст использует только когда `kuma-data` пуст. CSS-классы не используются, поскольку они генерируются и могут меняться. Raw-текст читается отдельно из `[kuma-section="raw"] pre`.
 
 ## Что снять в DevTools KUMA 4.6
 
