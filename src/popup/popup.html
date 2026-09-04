@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KumApe</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../assets/icons/icon-48.png" alt="">
+    <div><h1>KumApe <small>0.1</small></h1><p id="status" aria-live="polite">Подключаюсь…</p></div>
+    <button id="open-options" class="icon-button" title="Настройки" aria-label="Открыть настройки">⚙</button>
+  </header>
+
+  <section id="setup" class="notice" hidden>
+    <strong>Нужно указать узел KUMA</strong>
+    <p id="setup-text"></p>
+    <div class="actions"><button id="use-current">Использовать текущий адрес</button><button id="setup-options">Другой адрес…</button></div>
+  </section>
+
+  <nav id="tabs" aria-label="Инструменты" hidden>
+    <button class="active" data-panel="event">Событие</button>
+    <button data-panel="related">Связанные</button>
+    <button data-panel="ioc">IOC</button>
+    <button data-panel="rule">Правило</button>
+  </nav>
+
+  <main id="main" hidden>
+    <section id="event" class="panel active">
+      <div class="section-title"><h2>Текущее событие</h2><span id="event-source"></span></div>
+      <pre id="event-json">Откройте карточку события или вкладку Raw в KUMA.</pre>
+      <div class="actions">
+        <button id="copy-json" disabled>Копировать</button>
+        <button id="copy-link">Копировать ссылку</button>
+        <button id="refresh">Обновить</button>
+      </div>
+      <p class="hint">KumApe читает открытую карточку события. Если JSON не найден, откройте область Raw и нажмите «Обновить».</p>
+    </section>
+
+    <section id="related" class="panel">
+      <div class="section-title"><h2>Связанные события</h2><label>Диапазон <select id="range"><option value="300">±5 мин</option><option value="900" selected>±15 мин</option><option value="3600">±1 ч</option><option value="86400">±24 ч</option></select></label></div>
+      <div id="related-actions" class="card-list"></div>
+      <pre id="related-result" hidden></pre>
+    </section>
+
+    <section id="ioc" class="panel">
+      <h2>Индикаторы</h2>
+      <p class="hint">Значение покидает KUMA только после нажатия на конкретного провайдера.</p>
+      <div id="ioc-list" class="card-list"></div>
+    </section>
+
+    <section id="rule" class="panel">
+      <h2>Правило корреляции</h2>
+      <p id="rule-id" class="hint"></p>
+      <button id="load-rule" disabled>Загрузить read-only</button>
+      <pre id="rule-result">В текущем событии идентификатор правила не найден.</pre>
+    </section>
+  </main>
+
+  <footer>KumApe · KUMA Analyst Productivity Extension · независимый open-source проект</footer>
+  <script src="popup.js"></script>
+</body>
+</html>
