@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Настройки KumApe</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <header><img src="../assets/icons/icon-96.png" alt=""><div><h1>KumApe</h1><p>Подключение к Kaspersky KUMA 4.6</p></div></header>
+    <form id="settings">
+      <label>Адрес веб-интерфейса KUMA<input id="ui-origin" type="url" required placeholder="https://kuma.example.local:7220"></label>
+      <label>Адрес REST API<input id="api-origin" type="url" required placeholder="https://kuma.example.local:7223"></label>
+      <label>Кластер хранения<select id="cluster-id"><option value="">Определять автоматически</option></select></label>
+      <label>API-токен<input id="api-token" type="password" autocomplete="off" placeholder="Не сохранён в этой сессии Firefox"></label>
+      <p class="hint">Токен хранится только в памяти текущей сессии Firefox и удаляется при закрытии браузера. Логин и пароль KUMA расширение не запрашивает.</p>
+      <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
+    </form>
+    <section>
+      <h2>Проверка подключения</h2>
+      <div class="actions"><button id="test-session">Проверить web-сессию</button><button id="load-clusters">Получить кластеры REST API</button></div>
+      <pre id="result">Сначала сохраните настройки.</pre>
+    </section>
+    <section class="notice"><strong>Только чтение</strong><p>KumApe разрешает лишь проверку сессии, получение кластеров, поиск событий и чтение ресурса правила корреляции. Изменяющие запросы заблокированы в background-слое.</p></section>
+  </main>
+  <script src="../shared/kuma-adapter.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
