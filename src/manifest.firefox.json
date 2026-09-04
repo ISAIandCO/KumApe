@@ -3,6 +3,7 @@
   "name": "KumApe",
   "description": "Read-only investigation companion for Kaspersky KUMA",
   "version": "__VERSION__",
+  "version_name": "__VERSION__ (target: KUMA 4.6)",
   "icons": {
     "16": "assets/icons/icon-16.png",
     "32": "assets/icons/icon-32.png",
@@ -46,6 +47,7 @@
     "gecko": {
       "id": "kumape@isaiandco.local",
       "strict_min_version": "140.0",
+      "update_url": "__SELF_HOSTED_UPDATE_URL__",
       "data_collection_permissions": {
         "required": [
           "none"

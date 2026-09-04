@@ -1,6 +1,6 @@
 {
   "name": "kumape",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Firefox investigation companion for Kaspersky KUMA",
   "license": "Apache-2.0",
@@ -11,6 +11,9 @@
   "scripts": {
     "test": "node --test",
     "build": "node scripts/build.mjs",
-    "package": "node scripts/package.mjs"
+    "build:self-hosted": "npm test && node scripts/build.mjs --self-hosted && npm run verify:release",
+    "package": "node scripts/package.mjs",
+    "check:reproducible": "node scripts/check-reproducible.mjs",
+    "verify:release": "node scripts/verify-release.mjs"
   }
 }
