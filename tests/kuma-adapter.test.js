@@ -35,6 +35,51 @@ test("creates related actions from normalized KUMA fields", () => {
   ]);
 });
 
+test("uses built-in mappings for common Windows process events", () => {
+  const actions = api.buildRelatedActions({
+    DeviceEventClassID: "4688",
+    DeviceHostName: "host-01",
+    DestinationProcessName: "C:\\Windows\\example.exe",
+    DeviceCustomString4: "example.exe --synthetic",
+  });
+  const process = actions.find((item) => item.kind === "process");
+  const command = actions.find((item) => item.kind === "command");
+  assert.equal(process.value, "C:\\Windows\\example.exe");
+  assert.equal(process.where, "DestinationProcessName = 'C:\\\\Windows\\\\example.exe'");
+  assert.equal(command.value, "example.exe --synthetic");
+  assert.equal(command.where, "DeviceCustomString4 = 'example.exe --synthetic'");
+});
+
+test("allows a local profile to override extraction and SQL fields", () => {
+  const profiles = [{
+    name: "Synthetic normalizer",
+    when: [{ DeviceEventClassID: ["event-a"] }, { Name: ["alternate"] }],
+    fields: { process: ["FlexString2", "DeviceCustomString6"] },
+  }];
+  const actions = api.buildRelatedActions({
+    DeviceEventClassID: "EVENT-A",
+    DestinationProcessName: "ignored.exe",
+    FlexString2: "custom.exe",
+  }, profiles);
+  const process = actions.find((item) => item.kind === "process");
+  assert.equal(process.value, "custom.exe");
+  assert.equal(process.where, "(FlexString2 = 'custom.exe' OR DeviceCustomString6 = 'custom.exe')");
+  assert.equal(actions.some((item) => item.value === "ignored.exe"), false);
+});
+
+test("rejects unsafe or oversized field profiles", () => {
+  assert.throws(() => api.normalizeFieldProfiles([{
+    name: "Unsafe",
+    when: { DeviceEventClassID: ["1"] },
+    fields: { process: ["FileName; DROP TABLE events"] },
+  }]), /Недопустимое имя поля/);
+  assert.throws(() => api.normalizeFieldProfiles([{
+    name: "Unknown group",
+    when: { DeviceEventClassID: ["1"] },
+    fields: { arbitrary: ["FileName"] },
+  }]), /неизвестная группа/);
+});
+
 test("builds a bounded ISO period around the event", () => {
   assert.deepEqual(api.eventPeriod({ Timestamp: "2026-09-04T08:00:00Z" }, 300), {
     from: "2026-09-04T07:55:00.000Z",

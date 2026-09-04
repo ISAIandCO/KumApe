@@ -1,7 +1,12 @@
 "use strict";
 
 const adapterApi = globalThis.KumApeAdapter;
-const DEFAULT_CONFIG = Object.freeze({ uiOrigin: "", apiOrigin: "", clusterId: "" });
+const DEFAULT_CONFIG = Object.freeze({
+  uiOrigin: "",
+  apiOrigin: "",
+  clusterId: "",
+  fieldProfiles: adapterApi.BUILTIN_FIELD_PROFILES,
+});
 const ALLOWED_REQUESTS = Object.freeze([
   { method: "GET", base: "ui", pattern: /^\/api\/whoami$/ },
   { method: "GET", base: "ui", pattern: /^\/api\/private\/resources\/correlationRule\/[^/?#]+$/ },
@@ -81,6 +86,9 @@ async function kumaRequest({ origin, path, method = "GET", token, body }) {
     return await readJson(response, path);
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(`${path}: превышено время ожидания`);
+    if (error instanceof TypeError || /NetworkError|Failed to fetch/i.test(error?.message || "")) {
+      throw new Error(`${path}: Firefox не смог подключиться к ${normalizedOrigin}. Проверьте доступность порта 7223, протокол HTTPS и доверие сертификату API`);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -106,10 +114,14 @@ browser.runtime.onMessage.addListener(async (message) => {
       case "clusters:list":
         return { ok: true, clusters: await (await adapter()).getClusters() };
       case "related:actions":
-        return { ok: true, actions: adapterApi.buildRelatedActions(message.event) };
+        {
+          const config = await loadConfig();
+          return { ok: true, actions: adapterApi.buildRelatedActions(message.event, config.fieldProfiles) };
+        }
       case "related:search":
         {
-          const safeAction = adapterApi.buildRelatedActions(message.event).find((action) => (
+          const config = await loadConfig();
+          const safeAction = adapterApi.buildRelatedActions(message.event, config.fieldProfiles).find((action) => (
             action.kind === message.action?.kind && action.value === message.action?.value
           ));
           if (!safeAction) throw new Error("Параметры related search не соответствуют текущему событию");
