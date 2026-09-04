@@ -81,6 +81,9 @@ async function kumaRequest({ origin, path, method = "GET", token, body }) {
     return await readJson(response, path);
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(`${path}: превышено время ожидания`);
+    if (error instanceof TypeError || /NetworkError|Failed to fetch/i.test(error?.message || "")) {
+      throw new Error(`${path}: Firefox не смог подключиться к ${normalizedOrigin}. Проверьте доступность порта 7223, протокол HTTPS и доверие сертификату API`);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);

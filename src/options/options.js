@@ -57,6 +57,13 @@ $("#clear-token").addEventListener("click", async () => {
 $("#test-session").addEventListener("click", async () => {
   try { show((await send({ type: "session:test" })).user); } catch (error) { show(error.message, true); }
 });
+$("#open-api").addEventListener("click", async () => {
+  try {
+    const origin = api.normalizeOrigin($("#api-origin").value);
+    await browser.tabs.create({ url: new URL("/api/v3/events/clusters", origin).href });
+    show("API-адрес открыт. Подтвердите доверие сертификату, если Firefox покажет предупреждение; HTTP 401 без токена ожидаем.");
+  } catch (error) { show(error.message, true); }
+});
 $("#load-clusters").addEventListener("click", async () => {
   try {
     const selected = $("#cluster-id").value;

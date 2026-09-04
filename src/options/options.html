@@ -19,8 +19,9 @@
     </form>
     <section>
       <h2>Проверка подключения</h2>
-      <div class="actions"><button id="test-session">Проверить web-сессию</button><button id="load-clusters">Получить кластеры REST API</button></div>
+      <div class="actions"><button id="test-session">Проверить web-сессию</button><button id="open-api">Открыть API-адрес</button><button id="load-clusters">Получить кластеры REST API</button></div>
       <pre id="result">Сначала сохраните настройки.</pre>
+      <p class="hint">Если API использует внутренний сертификат, сначала откройте его адрес, подтвердите доверие в Firefox и затем повторите получение кластеров. Ответ 401 в открытой вкладке допустим: токен передаётся только из расширения.</p>
     </section>
     <section class="notice"><strong>Только чтение</strong><p>KumApe разрешает лишь проверку сессии, получение кластеров, поиск событий и чтение ресурса правила корреляции. Изменяющие запросы заблокированы в background-слое.</p></section>
   </main>

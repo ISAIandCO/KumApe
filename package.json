@@ -1,6 +1,6 @@
 {
   "name": "kumape",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Firefox investigation companion for Kaspersky KUMA",
   "license": "Apache-2.0",

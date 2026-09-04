@@ -1,7 +1,9 @@
 (function initKumaPage(global) {
   "use strict";
 
-  if (global.KumApePage) return;
+  if (global.KumApePage) {
+    return typeof document === "undefined" ? null : global.KumApePage.extractPageContext();
+  }
 
   const EVENT_HINTS = [
     "Timestamp", "DeviceReceiptTime", "EventTime", "Message", "SourceAddress",
@@ -28,6 +30,16 @@
     const haystack = `${Object.keys(value).join(" ")} ${label}`;
     const hints = EVENT_HINTS.filter((field) => haystack.toLowerCase().includes(field.toLowerCase())).length;
     return hints * 1000 + Math.min(entries, 500) + Math.min(String(text).length / 1000, 100);
+  }
+
+  function collectOpenRoots(documentObject) {
+    const roots = [documentObject];
+    for (let index = 0; index < roots.length; index += 1) {
+      for (const node of roots[index].querySelectorAll?.("*") || []) {
+        if (node.shadowRoot && !roots.includes(node.shadowRoot)) roots.push(node.shadowRoot);
+      }
+    }
+    return roots;
   }
 
   function extractFromTextNodes(documentObject) {
@@ -105,10 +117,15 @@
   }
 
   function extractPageContext(documentObject = document, urlValue = location.href) {
-    const candidates = [...extractFromTextNodes(documentObject), ...extractFromKumaFields(documentObject), ...extractFromTables(documentObject)]
+    const roots = collectOpenRoots(documentObject);
+    const candidates = roots.flatMap((root) => [
+      ...extractFromTextNodes(root),
+      ...extractFromKumaFields(root),
+      ...extractFromTables(root),
+    ])
       .sort((a, b) => b.score - a.score);
     const best = candidates[0] || null;
-    const raw = findRawText(documentObject) || best?.raw || null;
+    const raw = roots.map(findRawText).find(Boolean) || best?.raw || null;
     const title = documentObject.title || "";
     return {
       ...routeContext(urlValue),
@@ -118,8 +135,10 @@
       raw,
       source: best?.source || (raw ? "raw-pre" : null),
       score: best?.score || 0,
+      rootsChecked: roots.length,
     };
   }
 
-  global.KumApePage = Object.freeze({ candidateScore, extractFromKumaFields, extractPageContext, parseJsonCandidate, routeContext });
+  global.KumApePage = Object.freeze({ candidateScore, collectOpenRoots, extractFromKumaFields, extractPageContext, parseJsonCandidate, routeContext });
+  return typeof document === "undefined" ? null : global.KumApePage.extractPageContext();
 })(globalThis);
