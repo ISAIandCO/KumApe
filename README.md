@@ -5,7 +5,7 @@
 Экспериментальное Firefox-расширение для аналитика Kaspersky KUMA. Идея та же, что у [ApePatrol](https://github.com/ISAIandCO/ApePatrol): меньше ручного копирования между карточкой события, поиском и TI-порталами. Реализация при этом отдельная и рассчитана на модель данных и API KUMA.
 
 > [!IMPORTANT]
-> Версия `0.1.0` — технический MVP для KUMA 4.6. Работа публичного REST API опирается на документацию KUMA и библиотеку `KUMA-Community/kapi`; private API и DOM веб-интерфейса нужно подтвердить на реальной инсталляции KUMA 4.6.
+> Версия `0.1.1` — технический MVP для KUMA 4.6. Работа публичного REST API опирается на документацию KUMA и библиотеку `KUMA-Community/kapi`; private API и DOM веб-интерфейса нужно подтвердить на реальной инсталляции KUMA 4.6.
 
 ## Что уже есть
 
@@ -45,6 +45,20 @@ npm run package
 ```
 
 Результат появится в `artifacts/`.
+
+## Сборка и релиз на GitHub
+
+Workflow **CI** запускается для каждого pull request и push в `main`. Он выполняет тесты, собирает ZIP для ревью, проверяет воспроизводимость каталога расширения и сохраняет архив `kumape-firefox-review` в артефактах запуска.
+
+Workflow **Release signed XPI** запускается вручную из GitHub Actions на нужном commit. Для него в настройках репозитория должны быть заданы secrets `AMO_JWT_ISSUER` и `AMO_JWT_SECRET` от Mozilla Add-ons API. Workflow:
+
+1. собирает self-hosted вариант с `update_url`;
+2. получает у Mozilla unlisted-подпись;
+3. проверяет ID, версию и адрес обновлений внутри XPI;
+4. создает `updates.json`, SBOM, архив исходников и SHA-256 checksums;
+5. публикует GitHub Release с тегом `v<version>`.
+
+Перед повторным запуском релиза нужно поднять версию в `package.json` и `package-lock.json`: существующий GitHub tag не перезаписывается.
 
 ## Настройка KUMA
 
