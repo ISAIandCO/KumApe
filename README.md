@@ -1,6 +1,6 @@
 # KumApe
 
-<p align="center"><img src="assets/icons/icon-128.png" width="128" alt="KumApe"></p>
+<p align="center"><img src="assets/branding/KumApe.png" width="300" alt="KumApe"></p>
 
 Экспериментальное Firefox-расширение для аналитика Kaspersky KUMA. Идея та же, что у [ApePatrol](https://github.com/ISAIandCO/ApePatrol): меньше ручного копирования между карточкой события, поиском и TI-порталами. Реализация при этом отдельная и рассчитана на модель данных и API KUMA.
 
