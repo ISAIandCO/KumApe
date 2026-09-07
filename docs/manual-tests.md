@@ -13,9 +13,14 @@
 - [ ] При первом открытии popup предлагает текущий origin KUMA.
 - [ ] Firefox запрашивает разрешение только на Web UI и REST API origin.
 - [ ] Настройки сохраняют оба origin, но не показывают токен после ввода.
+- [ ] В настройках показаны 17 рекомендуемых профилей полей; некорректный JSON и недопустимое имя поля не сохраняются.
+- [ ] «Только общие поля» отключает event-specific overrides, а «Вернуть рекомендуемые профили» восстанавливает каталог.
 - [ ] После перезапуска Firefox токен нужно ввести заново.
 - [ ] «Проверить web-сессию» возвращает текущего пользователя либо понятную ошибку endpoint-а.
+- [ ] «Проверить REST API и токен» различает отсутствие токена, сетевую ошибку и HTTP 401/403.
 - [ ] «Получить кластеры REST API» показывает доступные storage clusters.
+- [ ] При наличии более 250 кластеров загружаются следующие страницы без повторов.
+- [ ] «Показать расширенные поля» возвращает схему либо понятный `403` для роли без соответствующего права.
 
 ## Текущее событие
 
@@ -34,6 +39,10 @@
 - [ ] Для `DeviceHostName` появляется действие по узлу.
 - [ ] Для `SourceUserName` / `DestinationUserName` появляется действие по учетной записи.
 - [ ] Для `SourceProcessName` / `DestinationProcessName` / `DeviceProcessName` и `FileHash` появляются соответствующие действия.
+- [ ] На 4688 командная строка читается из поля, указанного локальным нормализатором (в community-профиле — `DeviceCustomString4`).
+- [ ] На Sysmon 1/3/11/22/23 профиль срабатывает только при подходящем `DeviceEventCategory`.
+- [ ] На auditd EXECVE/SYSCALL используются поля, указанные в активном профиле.
+- [ ] Локальный тестовый профиль действительно заменяет поля выбранной группы и после удаления перестаёт влиять на действия.
 - [ ] SQL корректно экранирует значение с `'` и `\`.
 - [ ] Период ±5/15 минут, ±1/24 часа строится относительно времени события.
 - [ ] API возвращает события из выбранного storage cluster.
@@ -63,9 +72,11 @@
 | Проверка | Фактический endpoint / поле | Результат | Примечание |
 |---|---|---|---|
 | Web session | `GET /api/whoami` | Не проверено | |
-| Clusters | `GET /api/v3/events/clusters` | Не проверено | |
-| Event search | `POST /api/v3/events` | Не проверено | |
+| REST token | `GET /api/v3/users/whoami` | Подтверждено Swagger | |
+| Clusters | `GET /api/v3/events/clusters` | Подтверждено Swagger | |
+| Event search | `POST /api/v3/events` | Подтверждено Swagger | |
 | Event fields DOM | `[kuma-section="event-field"]` + `kuma-id` / `kuma-data` | Подтверждено образцом | |
 | Raw event DOM | `[kuma-section="raw"] pre` | Подтверждено образцом | |
 | Correlation rule ID | `CorrelationRuleID` / другое | Не проверено | |
-| Correlation rule resource | `/api/private/resources/correlationRule/{id}` | Не проверено | |
+| Extended fields | `GET /api/v3/settings/extendedFields/export` | Подтверждено Swagger | |
+| Correlation rule resource | `GET /api/v3/resources/correlationRule/{id}` | Подтверждено Swagger | |

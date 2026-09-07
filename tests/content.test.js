@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 await import("../src/content/content.js");
 const page = globalThis.KumApePage;
+const contentSource = await readFile(new URL("../src/content/content.js", import.meta.url), "utf8");
 
 test("parses JSON event candidates and ignores arbitrary text", () => {
   assert.deepEqual(page.parseJsonCandidate('{"SourceAddress":"192.0.2.1"}'), { SourceAddress: "192.0.2.1" });
@@ -61,4 +64,58 @@ test("extracts KUMA 4.6 event fields and raw text from marked DOM", () => {
   });
   assert.equal(context.raw, rawNode.textContent);
   assert.equal(context.source, "kuma-fields");
+});
+
+test("collects event fields from an open shadow root", () => {
+  const fields = [
+    ["Timestamp", "1704067200000"],
+    ["Message", "synthetic event"],
+    ["DeviceHostName", "host-01"],
+  ].map(([id, data]) => ({
+    getAttribute: (name) => ({ "kuma-id": id, "kuma-data": data }[name] ?? null),
+    querySelector: () => ({ textContent: data }),
+  }));
+  const shadowRoot = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === '[kuma-section="event-field"][kuma-id]' ? fields : [],
+  };
+  const documentObject = {
+    title: "KUMA",
+    body: { innerText: "KUMA" },
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === "*" ? [{ shadowRoot }] : [],
+  };
+
+  const context = page.extractPageContext(documentObject, "https://kuma.example.local/events");
+  assert.equal(Object.keys(context.event).length, 3);
+  assert.equal(context.rootsChecked, 2);
+  assert.equal(context.source, "kuma-fields");
+});
+
+test("returns the extracted context from the same script injection", () => {
+  const field = (id, data) => ({
+    getAttribute: (name) => ({ "kuma-id": id, "kuma-data": data }[name] ?? null),
+    querySelector: () => ({ textContent: data }),
+  });
+  const fields = [field("Timestamp", "1704067200000"), field("Message", "synthetic event"), field("DeviceHostName", "host-01")];
+  const documentObject = {
+    title: "KUMA",
+    body: { innerText: "KUMA" },
+    querySelector: () => null,
+    querySelectorAll: (selector) => ({
+      "*": [],
+      "pre, textarea, code": [],
+      '[kuma-section="event-field"][kuma-id]': fields,
+      "table, dl, [role='dialog'], [class*='detail']": [],
+      pre: [],
+    }[selector] || []),
+  };
+
+  const result = vm.runInNewContext(contentSource, {
+    document: documentObject,
+    location: { href: "https://kuma.example.local/events" },
+    URL,
+  });
+  assert.equal(Object.keys(result.event).length, 3);
+  assert.equal(result.source, "kuma-fields");
 });

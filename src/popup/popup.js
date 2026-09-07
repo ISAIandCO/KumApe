@@ -3,6 +3,8 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { tab: null, config: null, context: null, relatedActions: [] };
 
+$("#version").textContent = browser.runtime.getManifest().version;
+
 function setStatus(text, error = false) {
   $("#status").textContent = text;
   $("#status").style.color = error ? "#d34b4b" : "";
@@ -40,14 +42,17 @@ async function useCurrentOrigin() {
 
 async function extractContext() {
   let target = { tabId: state.tab.id, allFrames: true };
+  let results;
   try {
-    await browser.scripting.executeScript({ target, files: ["content/content.js"] });
+    results = await browser.scripting.executeScript({ target, files: ["content/content.js"] });
   } catch {
     target = { tabId: state.tab.id };
-    await browser.scripting.executeScript({ target, files: ["content/content.js"] });
+    results = await browser.scripting.executeScript({ target, files: ["content/content.js"] });
   }
-  const results = await browser.scripting.executeScript({ target, func: () => globalThis.KumApePage?.extractPageContext?.() ?? null });
-  return results.map((item) => item.result).filter(Boolean).sort((a, b) => b.score - a.score)[0] || null;
+  return results
+    .map((item) => item.result)
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)[0] || null;
 }
 
 function activatePanel(id) {
@@ -178,7 +183,7 @@ async function refreshContext() {
     await renderContext();
     if (state.context?.event) setStatus(`Событие получено (${Object.keys(state.context.event).length} полей)`);
     else if (state.context?.raw) setStatus("Получен Raw-текст; структурированный JSON не найден");
-    else setStatus("Откройте карточку события или область Raw", true);
+    else setStatus(`Поля не найдены (проверено DOM-контекстов: ${state.context?.rootsChecked || 0})`, true);
   } catch (error) {
     state.context = null;
     await renderContext();

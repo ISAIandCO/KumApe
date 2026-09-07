@@ -1,16 +1,18 @@
 # KUMA 4.6: заметки по API для KumApe
 
-Актуальность: 2026-09-04. Цель документа — не выдать найденные community-endpoint-ы за гарантированный контракт KUMA, а явно разделить подтвержденное документацией и то, что ещё нужно проверить через DevTools конкретной инсталляции.
+Актуальность: 2026-09-07. Цель документа — явно разделить официальный public REST, private web API и то, что ещё нужно проверить через DevTools конкретной инсталляции. Более широкая карта REST, web API, DOM и полей: [kuma-surfaces-and-fields.md](kuma-surfaces-and-fields.md).
 
 ## Статус источников
 
 | Возможность | Endpoint / механизм | Основание | Статус |
 |---|---|---|---|
 | Авторизация public REST | `Authorization: Bearer <token>` | Официальная документация KUMA 4.6 | Подтверждено документацией |
-| Получение storage clusters | `GET :7223/api/v3/events/clusters` | `KUMA-Community/kapi` | Нужна проверка на целевой KUMA |
-| Поиск событий | `POST :7223/api/v3/events` | `KUMA-Community/kapi` | Нужна проверка на целевой KUMA |
+| Проверка REST-токена | `GET :7223/api/v3/users/whoami` | Официальная OpenAPI-схема KUMA 4.6 | Подтверждено документацией |
+| Получение storage clusters | `GET :7223/api/v3/events/clusters` | Официальная OpenAPI-схема KUMA 4.6 | Подтверждено документацией |
+| Поиск событий | `POST :7223/api/v3/events` | Официальная OpenAPI-схема KUMA 4.6 | Подтверждено документацией |
 | Проверка web-сессии | `GET :7220/api/whoami` | `KUMA-Community/kapi` private client | Нужна проверка на KUMA 4.6 |
-| Чтение correlation rule | `GET :7220/api/private/resources/correlationRule/{id}` | `KUMA-Community/kapi` private client | Нужна проверка на KUMA 4.6 |
+| Чтение correlation rule | `GET :7223/api/v3/resources/correlationRule/{id}` | Официальная OpenAPI-схема KUMA 4.6 | Подтверждено документацией |
+| Расширенная схема полей | `GET :7223/api/v3/settings/extendedFields/export` | Официальная OpenAPI-схема KUMA 4.6 | Подтверждено документацией |
 | Извлечение полей карточки | `[kuma-section="event-field"]`, `kuma-id`, `kuma-data` | HTML карточки KUMA 4.6 | Подтверждено предоставленным образцом |
 | Извлечение Raw | `[kuma-section="raw"] pre` | HTML карточки KUMA 4.6 | Подтверждено предоставленным образцом |
 
@@ -39,10 +41,10 @@ Content-Type: application/json
 }
 ```
 
-Список кластеров запрашивается отдельно:
+Список кластеров запрашивается отдельно. API отдает до 250 записей на страницу, поэтому KumApe запрашивает `page=1`, `page=2` и далее до первой неполной страницы:
 
 ```http
-GET https://<KUMA_CORE>:7223/api/v3/events/clusters
+GET https://<KUMA_CORE>:7223/api/v3/events/clusters?page=1
 Authorization: Bearer <token>
 ```
 
@@ -50,6 +52,7 @@ Authorization: Bearer <token>
 
 Полезные ссылки:
 
+- [KUMA 4.6 Public API 3.0 (Swagger)](https://support.kaspersky.com/help/KUMA/4.6/common/RestAPI/3/swagger_dist/dist/index.html)
 - [Authorizing API requests](https://support.kaspersky.com/kuma/4.6/217974)
 - [Configuring permissions to access the API](https://support.kaspersky.com/kuma/4.6/235388)
 - [Manually creating an SQL query](https://support.kaspersky.com/kuma/4.6/228356)
@@ -58,7 +61,7 @@ Authorization: Bearer <token>
 
 ## Как формируется related search
 
-KumApe разрешает только заранее известные имена полей и экранирует обратную косую черту и одинарную кавычку в значении. Пример:
+KumApe разрешает только синтаксически безопасные имена полей и экранирует обратную косую черту и одинарную кавычку в значении. Общие поля могут быть переопределены локальными профилями, которые срабатывают по `DeviceEventClassID`, `DeviceEventCategory`, `DeviceProduct` или другим полям события. Пример:
 
 ```sql
 SELECT * FROM `events`
@@ -69,17 +72,17 @@ LIMIT 250
 
 Период берется из `Timestamp`, `EventTime`, `DeviceReceiptTime`, `EndTime`, `StartTime` или `time`. Если ни одно поле не распознано, центром диапазона становится текущее время.
 
-## Private API и сессия веб-интерфейса
+## REST-ресурсы и сессия веб-интерфейса
 
 В community-клиенте используются cookie веб-сессии и XSRF-токен после логина на `:7220`. KumApe не повторяет логин и не хранит пароль. Для spike выполняется только безопасный `GET /api/whoami` с `credentials: include`.
 
-Чтение ресурса правила сейчас пробуется через:
+Чтение правила выполняется через документированный public REST:
 
 ```http
-GET /api/private/resources/correlationRule/{rule-id}
+GET /api/v3/resources/correlationRule/{rule-id}
 ```
 
-Если endpoint изменился в 4.6, нужно заменить только метод `getCorrelationRule()` в `src/shared/kuma-adapter.js`; popup и извлечение события от этого не зависят.
+Private web API для чтения правила больше не требуется. Popup и извлечение события по-прежнему не зависят от формата ресурса.
 
 ## DOM карточки события
 

@@ -35,6 +35,51 @@ test("creates related actions from normalized KUMA fields", () => {
   ]);
 });
 
+test("uses built-in mappings for common Windows process events", () => {
+  const actions = api.buildRelatedActions({
+    DeviceEventClassID: "4688",
+    DeviceHostName: "host-01",
+    DestinationProcessName: "C:\\Windows\\example.exe",
+    DeviceCustomString4: "example.exe --synthetic",
+  });
+  const process = actions.find((item) => item.kind === "process");
+  const command = actions.find((item) => item.kind === "command");
+  assert.equal(process.value, "C:\\Windows\\example.exe");
+  assert.equal(process.where, "DestinationProcessName = 'C:\\\\Windows\\\\example.exe'");
+  assert.equal(command.value, "example.exe --synthetic");
+  assert.equal(command.where, "DeviceCustomString4 = 'example.exe --synthetic'");
+});
+
+test("allows a local profile to override extraction and SQL fields", () => {
+  const profiles = [{
+    name: "Synthetic normalizer",
+    when: [{ DeviceEventClassID: ["event-a"] }, { Name: ["alternate"] }],
+    fields: { process: ["FlexString2", "DeviceCustomString6"] },
+  }];
+  const actions = api.buildRelatedActions({
+    DeviceEventClassID: "EVENT-A",
+    DestinationProcessName: "ignored.exe",
+    FlexString2: "custom.exe",
+  }, profiles);
+  const process = actions.find((item) => item.kind === "process");
+  assert.equal(process.value, "custom.exe");
+  assert.equal(process.where, "(FlexString2 = 'custom.exe' OR DeviceCustomString6 = 'custom.exe')");
+  assert.equal(actions.some((item) => item.value === "ignored.exe"), false);
+});
+
+test("rejects unsafe or oversized field profiles", () => {
+  assert.throws(() => api.normalizeFieldProfiles([{
+    name: "Unsafe",
+    when: { DeviceEventClassID: ["1"] },
+    fields: { process: ["FileName; DROP TABLE events"] },
+  }]), /Недопустимое имя поля/);
+  assert.throws(() => api.normalizeFieldProfiles([{
+    name: "Unknown group",
+    when: { DeviceEventClassID: ["1"] },
+    fields: { arbitrary: ["FileName"] },
+  }]), /неизвестная группа/);
+});
+
 test("builds a bounded ISO period around the event", () => {
   assert.deepEqual(api.eventPeriod({ Timestamp: "2026-09-04T08:00:00Z" }, 300), {
     from: "2026-09-04T07:55:00.000Z",
@@ -76,6 +121,57 @@ test("sends a bounded read-only events request through the adapter", async () =>
   assert.equal(calls[0].body.clusterID, "cluster-1");
   assert.equal(calls[0].body.period.from, "2026-09-04T07:55:00.000Z");
   assert.deepEqual(result.events, [{ ID: "event-1" }]);
+});
+
+test("uses the documented public REST endpoints for identity, fields and correlation rules", async () => {
+  const calls = [];
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+    token: "secret",
+  }, async (request) => {
+    calls.push(request);
+    return { ok: true };
+  });
+
+  await adapter.getApiCurrentUser();
+  await adapter.getExtendedFields();
+  await adapter.getCorrelationRule("rule/1");
+
+  assert.deepEqual(calls.map(({ origin, path, method, token }) => ({ origin, path, method, token })), [
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/users/whoami", method: "GET", token: "secret" },
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/settings/extendedFields/export", method: "GET", token: "secret" },
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/resources/correlationRule/rule%2F1", method: "GET", token: "secret" },
+  ]);
+});
+
+test("requires a token before testing the public REST identity", async () => {
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+  }, async () => assert.fail("request must not run without a token"));
+  assert.throws(() => adapter.getApiCurrentUser(), /API-токен не загружен/);
+});
+
+test("loads every documented cluster page and removes duplicate IDs", async () => {
+  const calls = [];
+  const firstPage = Array.from({ length: 250 }, (_, index) => ({ id: `cluster-${index}`, name: `Cluster ${index}` }));
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+    token: "secret",
+  }, async (request) => {
+    calls.push(request);
+    return request.path.endsWith("page=1") ? firstPage : [{ id: "cluster-249", name: "Duplicate" }, { id: "cluster-250", name: "Last" }];
+  });
+
+  const clusters = await adapter.getClusters();
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/api/v3/events/clusters?page=1",
+    "/api/v3/events/clusters?page=2",
+  ]);
+  assert.equal(clusters.length, 251);
+  assert.equal(clusters.at(-1).id, "cluster-250");
 });
 
 test("requires a storage cluster choice when Core exposes several", async () => {
