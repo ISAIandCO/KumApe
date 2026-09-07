@@ -16,7 +16,7 @@ const updateUrl = `https://github.com/${process.env.GITHUB_REPOSITORY || "ISAIan
 
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const directory of ["ai", "background", "content", "options", "popup", "search", "shared", "workspace"]) {
+for (const directory of ["ai", "background", "content", "options", "popup", "process-graph", "shared", "workspace"]) {
   await cp(path.join(root, "src", directory), path.join(output, directory), { recursive: true });
 }
 await cp(path.join(root, "assets", "icons"), path.join(output, "assets", "icons"), { recursive: true });

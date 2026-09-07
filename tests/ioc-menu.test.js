@@ -56,6 +56,7 @@ test("inline menu mounts once, sends nothing on open, and queries only the selec
   const app = fixture(); await app.ready();
   await app.ready(); assert.equal(app.label.children.length, 1);
   assert.equal(app.field.children[1], app.value);
+  assert.match(app.button().style.cssText, /margin-inline-start:4px/);
   assert.match(app.button().attrs["aria-label"], /SourceAddress/);
   assert.equal(app.messages.length, 0);
   await app.button().emit("click");

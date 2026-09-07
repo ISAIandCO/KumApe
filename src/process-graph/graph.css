@@ -1,0 +1,22 @@
+:root { color-scheme: dark; font: 13px/1.4 system-ui,sans-serif; background: #111820; color: #e5edf4; }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; overflow: hidden; }
+header { display: flex; align-items: center; gap: 11px; padding: 9px 13px; border-bottom: 1px solid #33414e; background: #17212b; }
+header img { width: 40px; height: 40px; object-fit: contain; }
+header > div:not(.toolbar) { min-width: 210px; margin-right: auto; }
+h1,p { margin: 0; } h1 { font-size: 17px; } #status { color: #9eb0bf; }
+.toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+button,input,select { min-height: 32px; padding: 5px 9px; border: 1px solid #435363; border-radius: 5px; background: #202d39; color: inherit; font: inherit; }
+button { cursor: pointer; } button:hover { border-color: #26b7d2; } input { width: 210px; }
+main { position: relative; min-height: 0; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; cursor: grab; background-color: #10171e; background-image: radial-gradient(#31404d 1px,transparent 1px); background-size: 24px 24px; }
+canvas.dragging { cursor: grabbing; }
+aside { position: absolute; right: 12px; bottom: 12px; width: min(360px,calc(100% - 24px)); max-height: 42%; overflow: auto; padding: 11px; border: 1px solid #405361; border-radius: 7px; background: #17212bea; box-shadow: 0 4px 20px #0008; }
+aside dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 9px; margin: 8px 0 0; } aside dt { color: #91a4b4; } aside dd { margin: 0; overflow-wrap: anywhere; }
+aside button { margin-top: 9px; }
+#tooltip { position: absolute; z-index: 3; max-width: 390px; pointer-events: none; padding: 7px 9px; border: 1px solid #4b6675; border-radius: 5px; background: #192632f5; box-shadow: 0 4px 16px #0008; white-space: pre-line; overflow-wrap: anywhere; }
+footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 6px 12px; border-top: 1px solid #33414e; background: #17212b; }
+footer details { max-width: 65%; } pre { max-height: 120px; overflow: auto; white-space: pre-wrap; }
+#legend { white-space: nowrap; color: #9eb0bf; } #legend i { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 12px; border-radius: 50%; }
+#legend .source { background: #ffb74d; } #legend .normal { background: #38b8d3; } #legend .match { background: #ed6fc4; }
+@media (max-width:900px) { header { align-items:flex-start; } header > div:not(.toolbar) { min-width:150px; } input { width:170px; } #legend { display:none; } }

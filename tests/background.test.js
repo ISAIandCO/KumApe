@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
 function storage(data) {
   return {
     async get(keys) {
@@ -24,7 +24,7 @@ function background(local = {}, session = {}, fetchImpl = () => { throw new Erro
       storage: { local: storage(local), session: storage(session) },
       permissions: { contains: async () => granted },
       runtime: { getURL: (path) => `moz-extension://test/${path}`, onMessage: { addListener: (fn) => { handler = fn; } }, openOptionsPage: async () => {} },
-      tabs: { create: async (options) => { createdTabs.push(options); } },
+      tabs: { create: async (options) => { createdTabs.push(options); return { id: createdTabs.length, ...options }; } },
     },
   });
   for (const file of files) vm.runInContext(file, context);
@@ -73,7 +73,7 @@ test("events 403 identifies the missing POST permission without retrying or chan
   assert.equal(requests, 1);
 });
 
-test("related query is rebuilt in background and new-tab URL contains only an opaque request id", async () => {
+test("related query is rebuilt in background and opens the native KUMA events route", async () => {
   const session = {};
   const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", fieldProfiles: [] }, session);
   const event = { SourceAddress: "8.8.8.8", Timestamp: "2026-09-07T00:00:00Z" };
@@ -85,10 +85,34 @@ test("related query is rebuilt in background and new-tab URL contains only an op
   assert.equal(opened.ok, true);
   assert.equal(app.createdTabs.length, 1);
   const url = new URL(app.createdTabs[0].url);
-  assert.equal(url.pathname, "/search/search.html");
+  assert.equal(url.origin, "https://kuma.test");
+  assert.equal(url.pathname, "/events");
   assert.equal(url.href.includes("8.8.8.8"), false);
   assert.equal(url.href.includes("SELECT"), false);
-  assert.ok(session[`searchRequest:${url.searchParams.get("id")}`]);
+  assert.match(session["nativeSearch:1"].query, /SourceAddress = '8\.8\.8\.8'/);
+  const claimed = await app.message({ type: "native-search:claim" }, { tab: { id: 1 }, url: "https://kuma.test/events" });
+  assert.match(claimed.request.query, /^SELECT /);
+  await app.message({ type: "native-search:report", applied: true }, { tab: { id: 1 }, url: "https://kuma.test/events" });
+  assert.equal(session["nativeSearch:1"], undefined);
+});
+
+test("legacy processGraph settings migrate to separate Event ID mappings", async () => {
+  const local = { fieldProfiles: [{ name: "Custom 4688", when: { DeviceEventClassID: ["4688"] }, fields: { host: ["HostX"] }, processGraph: { host: ["HostX"], pid: ["DeviceCustomString3"], parentPid: ["DeviceCustomString5"], image: ["ImageX"] } }] };
+  const app = background(local);
+  const response = await app.message({ type: "config:get" });
+  assert.equal(response.config.processMappings[0].pid, "DeviceCustomString3");
+  assert.equal(response.config.processMappings[0].parentPid, "DeviceCustomString5");
+  assert.equal("processGraph" in local.fieldProfiles[0], false);
+});
+
+test("process graph request uses configured PID fields and opens graph page", async () => {
+  const mappings = [{ name: "Custom", eventIdField: "DeviceEventClassID", eventIdValue: "4688", host: "HostX", pid: "DeviceCustomString3", parentPid: "DeviceCustomString5", processGuid: "", parentGuid: "", image: "ImageX", commandLine: "", user: "", eventRecordId: "ID" }];
+  const session = {}; const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", processMappings: mappings }, session);
+  const response = await app.message({ type: "process:open-graph", event: { DeviceEventClassID: "4688", HostX: "pc", DeviceCustomString3: "42", DeviceCustomString5: "7" } });
+  assert.equal(response.ok, true, response.error);
+  const url = new URL(app.createdTabs[0].url);
+  assert.equal(url.pathname, "/process-graph/graph.html");
+  assert.ok(session[`processRequest:${url.searchParams.get("id")}`]);
 });
 
 test("useful filters are typed, hide predicates from UI, and reject an inapplicable id", async () => {
