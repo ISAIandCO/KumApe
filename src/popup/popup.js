@@ -134,7 +134,7 @@ async function renderRelated() {
       }),
       button("Открыть в новой вкладке", async () => {
         await send({ type: "related:open-tab", action, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 });
-        setStatus("Результаты открыты в новой вкладке");
+        setStatus("Фильтр передан в новую вкладку KUMA");
       }),
     );
   }
@@ -147,6 +147,14 @@ async function renderFilters() {
   for (const filter of response.filters) {
     const actions = addCard(container, filter.title, filter.applicable ? filter.description : filter.reason);
     const card = actions.parentElement; if (!filter.applicable) { card.classList.add("unavailable"); continue; }
+    if (filter.id === "process-relatives") {
+      actions.append(
+        button("Открыть граф", async () => { await send({ type: "process:open-graph", event: state.context.event, rangeSeconds: Number($("#range").value), limit: 1000 }); setStatus("Граф процессов открыт"); }),
+        button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 1000 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
+        button("Открыть в KUMA", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 1000 }); setStatus("Фильтр передан в новую вкладку KUMA"); }),
+      );
+      continue;
+    }
     actions.append(
       button("Найти", async () => {
         setStatus(`Применяю фильтр «${filter.title}»…`);
@@ -154,7 +162,7 @@ async function renderFilters() {
         activatePanel("related"); $("#related-result").hidden = false; $("#related-result").textContent = JSON.stringify({ query: response.result.query, count: response.result.events.length, events: response.result.events }, null, 2); setStatus(`Найдено событий: ${response.result.events.length}`);
       }),
       button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 250 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
-      button("Открыть", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 }); setStatus("Результаты открыты в новой вкладке"); }),
+      button("Открыть в KUMA", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 }); setStatus("Фильтр передан в новую вкладку KUMA"); }),
     );
   }
 }

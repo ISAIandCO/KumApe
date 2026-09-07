@@ -132,13 +132,13 @@
         button.setAttribute("aria-label", `KumApe: проверить IOC в поле ${node.getAttribute("kuma-id") || ""}`);
         button.setAttribute("aria-haspopup", "dialog");
         button.setAttribute("aria-expanded", "false");
-        button.style.cssText = "margin-inline-start:0;margin-inline-end:4px;padding:1px 4px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:14px;vertical-align:baseline";
+        button.style.cssText = "margin-inline-start:4px;margin-inline-end:0;padding:1px 4px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:14px;vertical-align:baseline";
         button.addEventListener("click", (event) => {
           event.preventDefault(); event.stopPropagation();
           if (event.isTrusted) open(button, node);
         });
         shadow.append(button);
-        (fieldLabel(node) || node).prepend(host);
+        (fieldLabel(node) || node).append(host);
         buttons.set(node, host);
       }
     }

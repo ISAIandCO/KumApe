@@ -1,11 +1,13 @@
 "use strict";
 
 const adapterApi = globalThis.KumApeAdapter;
+const processApi = globalThis.KumApeProcess;
 const DEFAULT_CONFIG = Object.freeze({
   uiOrigin: "",
   apiOrigin: "",
   clusterId: "",
   fieldProfiles: adapterApi.BUILTIN_FIELD_PROFILES,
+  processMappings: processApi.BUILTIN_PROCESS_MAPPINGS,
   ai: { enabled: false, endpoint: "http://127.0.0.1:8080/v1", model: "local-model", privacyMode: "strict" },
 });
 const REQUEST_TTL_MS = 5 * 60_000;
@@ -21,12 +23,17 @@ const ALLOWED_REQUESTS = Object.freeze([
 // One-time migration keeps keys entered before the persistent-storage update.
 const keyMigration = (async () => {
   const [local, session] = await Promise.all([
-    browser.storage.local.get(["apiToken", "iocApiKeys"]),
+    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings"]),
     browser.storage.session.get(["apiToken", "iocApiKeys"]),
   ]);
   const moved = {};
   for (const key of ["apiToken", "iocApiKeys"]) {
     if (local[key] === undefined && session[key] !== undefined) moved[key] = session[key];
+  }
+  if (local.processMappings === undefined) {
+    const legacy = processApi.mappingsFromLegacyProfiles(local.fieldProfiles);
+    moved.processMappings = legacy.length ? legacy : processApi.BUILTIN_PROCESS_MAPPINGS;
+    if (legacy.length) moved.fieldProfiles = local.fieldProfiles.map(({ processGraph, ...profile }) => profile);
   }
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
   await browser.storage.session.remove(["apiToken", "iocApiKeys"]);
@@ -137,20 +144,34 @@ async function safeRelatedAction(message) {
 
 async function safeFilter(message) {
   const config = await loadConfig();
-  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles);
+  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles, config.processMappings);
   if (!filter) throw new Error("Фильтр неприменим к текущему событию");
   return filter;
 }
 
-async function openSearchTab(type, message, action) {
+async function openKumaSearchTab(message, action) {
+  const config = await loadConfig();
+  if (!config.uiOrigin) throw new Error("Сначала укажите адрес KUMA в настройках");
+  const query = adapterApi.buildEventsQuery(action.where, message.limit);
+  const tab = await browser.tabs.create({ url: new URL("/events", config.uiOrigin).href });
+  if (!Number.isInteger(tab?.id)) throw new Error("Firefox не вернул идентификатор вкладки KUMA");
+  await browser.storage.session.set({ [`nativeSearch:${tab.id}`]: {
+    query, period: adapterApi.eventPeriod(message.event, message.rangeSeconds), expiresAt: Date.now() + REQUEST_TTL_MS,
+  } });
+  return { tabId: tab.id };
+}
+
+async function openProcessGraph(message) {
+  const config = await loadConfig();
+  processApi.graphSearchAction(message.event, config.processMappings);
   const id = requestId();
-  await browser.storage.session.set({ [`searchRequest:${id}`]: {
-    type, event: message.event, action,
+  await browser.storage.session.set({ [`processRequest:${id}`]: {
+    event: message.event,
     rangeSeconds: Math.max(60, Number(message.rangeSeconds) || adapterApi.DEFAULT_RANGE_SECONDS || 900),
-    limit: Math.max(1, Math.min(1000, Number(message.limit) || 250)),
+    limit: Math.max(1, Math.min(1000, Number(message.limit) || 1000)),
     expiresAt: Date.now() + REQUEST_TTL_MS,
   } });
-  await browser.tabs.create({ url: browser.runtime.getURL(`search/search.html?id=${encodeURIComponent(id)}`) });
+  await browser.tabs.create({ url: browser.runtime.getURL(`process-graph/graph.html?id=${encodeURIComponent(id)}`) });
   return { id };
 }
 
@@ -214,13 +235,26 @@ async function runAi(message) {
   return content;
 }
 
+if (browser.tabs.onUpdated?.addListener) {
+  browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status !== "complete") return;
+    const request = (await browser.storage.session.get(`nativeSearch:${tabId}`))[`nativeSearch:${tabId}`];
+    if (!request || request.expiresAt < Date.now()) return;
+    try {
+      const config = await loadConfig();
+      if (new URL(tab.url).origin !== config.uiOrigin) return;
+      await browser.scripting.executeScript({ target: { tabId }, files: ["/content/kuma-search.js"] });
+    } catch { /* The in-page fallback is unavailable if KUMA blocks injection. */ }
+  });
+}
+
 browser.runtime.onMessage.addListener(async (message, sender) => {
   try {
     if (!message || typeof message.type !== "string") return undefined;
     if (sender?.tab && !sender.url?.startsWith(browser.runtime.getURL(""))) {
       const config = await loadConfig();
       if (!sender.url || new URL(sender.url).origin !== config.uiOrigin
-        || !["ioc:lookup", "ioc:open", "ioc:options"].includes(message.type)) {
+        || !["ioc:lookup", "ioc:open", "ioc:options", "native-search:claim", "native-search:report"].includes(message.type)) {
         throw new Error("Сообщение разрешено только из карточки настроенной KUMA");
       }
       if (!await browser.permissions.contains({ origins: [permissionPattern(config.uiOrigin)] })) {
@@ -272,10 +306,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         return { ok: true, query: adapterApi.buildEventsQuery(action.where, message.limit) };
       }
       case "related:open-tab":
-        return { ok: true, result: await openSearchTab("related", message, await safeRelatedAction(message)) };
+        return { ok: true, result: await openKumaSearchTab(message, await safeRelatedAction(message)) };
       case "filters:list": {
         const config = await loadConfig();
-        return { ok: true, filters: globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles).map(({ where, ...filter }) => filter) };
+        return { ok: true, filters: globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles, config.processMappings).map(({ where, ...filter }) => filter) };
       }
       case "filters:query": {
         const filter = await safeFilter(message);
@@ -286,10 +320,33 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         return { ok: true, result: await (await adapter()).searchRelated(filter, message.event, message.rangeSeconds, message.limit) };
       }
       case "filters:open-tab":
-        return { ok: true, result: await openSearchTab("filter", message, await safeFilter(message)) };
-      case "search:request:run": {
-        const request = await storedRequest("searchRequest", message.id);
-        return { ok: true, result: await (await adapter()).searchRelated(request.action, request.event, request.rangeSeconds, request.limit) };
+        return { ok: true, result: await openKumaSearchTab(message, await safeFilter(message)) };
+      case "process:open-graph":
+        return { ok: true, result: await openProcessGraph(message) };
+      case "process:request:run": {
+        const request = await storedRequest("processRequest", message.id);
+        const config = await loadConfig();
+        const action = processApi.graphSearchAction(request.event, config.processMappings);
+        const result = await (await adapter()).searchRelated(action, request.event, request.rangeSeconds, request.limit);
+        return { ok: true, result: { query: result.query, period: result.period, graph: processApi.buildGraph(result.events, request.event, config.processMappings) } };
+      }
+      case "process:event:open": {
+        const config = await loadConfig();
+        const mapping = processApi.mappingForEvent(message.event, config.processMappings);
+        const fields = processApi.processFields(message.event, mapping);
+        if (!mapping || !fields?.eventRecordId || !mapping.eventRecordId) throw new Error("Для узла не найден ID события KUMA");
+        const action = { where: adapterApi.equalityWhere([mapping.eventRecordId], fields.eventRecordId) };
+        return { ok: true, result: await openKumaSearchTab({ ...message, limit: 1 }, action) };
+      }
+      case "native-search:claim": {
+        const key = `nativeSearch:${sender.tab.id}`;
+        const request = (await browser.storage.session.get(key))[key];
+        if (!request || request.expiresAt < Date.now()) throw new Error("Фильтр для вкладки не найден или устарел");
+        return { ok: true, request: { query: request.query, period: request.period } };
+      }
+      case "native-search:report": {
+        if (message.applied) await browser.storage.session.remove(`nativeSearch:${sender.tab.id}`);
+        return { ok: true };
       }
       case "workspace:open":
         await browser.tabs.create({ url: browser.runtime.getURL(message.id ? `workspace/workspace.html?id=${encodeURIComponent(message.id)}` : "workspace/workspace.html") });

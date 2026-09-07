@@ -18,9 +18,15 @@
       <p class="hint">Для поиска требуется разрешение <code>POST /api/v3/events</code>. Одних GET-прав недостаточно: POST здесь выполняет SQL-поиск и не изменяет события. Также нужен <code>GET /api/v3/events/clusters</code> и доступ к выбранному кластеру и тенанту.</p>
       <label>Профили полей related search
         <textarea id="field-profiles" rows="22" spellcheck="false" required></textarea>
-        <small class="hint">Профиль выбирается по полям из <code>when</code>. <code>fields</code> заменяет поля related search; необязательный <code>processGraph</code> задаёт host, pid, parentPid, processGuid, parentGuid, image, commandLine, user и eventId. Встроенные PID-mappings проверьте по локальным нормализаторам KUMA.</small>
+        <small class="hint">Профиль выбирается по полям из <code>when</code>, а <code>fields</code> заменяет поля related search. Поля графа процессов настраиваются отдельно ниже.</small>
       </label>
       <div class="actions"><button id="restore-profiles" type="button">Вернуть рекомендуемые профили</button><button id="clear-profiles" type="button">Только общие поля</button></div>
+      <fieldset>
+        <legend>Поля графа процессов по Event ID</legend>
+        <p class="hint">Для каждого типа события задайте поле и значение Event ID, затем фактические поля нормализатора. Для вашего 4688 укажите <code>PID процесса = DeviceCustomString3</code> и <code>PID родителя = DeviceCustomString5</code>.</p>
+        <div id="process-mappings"></div>
+        <div class="actions"><button id="add-process-mapping" type="button">Добавить Event ID</button><button id="restore-process-mappings" type="button">Вернуть рекомендуемые</button></div>
+      </fieldset>
       <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
     </form>
     <section>
@@ -47,6 +53,7 @@
     <section class="notice"><strong>Только чтение</strong><p>KumApe разрешает лишь проверку web-сессии и REST-токена, получение кластеров и расширенной схемы полей, поиск событий и чтение ресурса правила корреляции. Изменяющие запросы заблокированы в background-слое.</p></section>
   </main>
   <script src="../shared/kuma-adapter.js"></script>
+  <script src="../shared/process-model.js"></script>
   <script src="../shared/ioc-providers.js"></script>
   <script src="options.js"></script>
 </body>

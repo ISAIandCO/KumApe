@@ -2,25 +2,12 @@
   "use strict";
 
   const api = global.KumApeAdapter;
+  const processApi = global.KumApeProcess;
   const eventClass = (...ids) => `(${ids.map((id) => `DeviceEventClassID = '${api.escapeSqlString(id)}'`).join(" OR ")})`;
   const and = (...parts) => parts.filter(Boolean).map((part) => `(${part})`).join(" AND ");
   const or = (...parts) => parts.filter(Boolean).map((part) => `(${part})`).join(" OR ");
 
-  function matchingProcessGraph(event, profiles) {
-    for (const profile of api.normalizeFieldProfiles(profiles)) {
-      if (!profile.processGraph) continue;
-      const clauses = profile.when;
-      const matches = clauses.some((clause) => Object.entries(clause).every(([field, accepted]) => {
-        const values = api.valuesForAliases(event, [field]).map((value) => value.toLowerCase());
-        return accepted.some((value) => values.includes(value.toLowerCase()));
-      }));
-      if (matches) return profile.processGraph;
-    }
-    if (profiles !== api.BUILTIN_FIELD_PROFILES) return matchingProcessGraph(event, api.BUILTIN_FIELD_PROFILES);
-    return null;
-  }
-
-  function buildUsefulFilters(event, profiles = api.BUILTIN_FIELD_PROFILES) {
+  function buildUsefulFilters(event, profiles = api.BUILTIN_FIELD_PROFILES, processMappings = processApi.BUILTIN_PROCESS_MAPPINGS) {
     if (!event || typeof event !== "object") return [];
     const groups = new Map(api.fieldGroupsForEvent(event, profiles).map((group) => [group.kind, {
       ...group,
@@ -37,18 +24,14 @@
     const file = groupWhere("file");
     const ip = groupWhere("ip");
     const ruleId = api.correlationRuleId(event);
-    const graph = matchingProcessGraph(event, profiles);
-    const pid = graph && api.valuesForAliases(event, graph.pid || [])[0];
-    const parentPid = graph && api.valuesForAliases(event, graph.parentPid || [])[0];
-    const relatives = graph && host && or(
-      pid && graph.parentPid?.length ? api.equalityWhere(graph.parentPid, pid) : null,
-      parentPid && graph.pid?.length ? api.equalityWhere(graph.pid, parentPid) : null,
-    );
+    let graphAction = null;
+    let graphReason = "Для Event ID не настроены поля графа";
+    try { graphAction = processApi.graphSearchAction(event, processMappings); } catch (error) { graphReason = error.message; }
     const definitions = [
       ["auth-failures", "Неуспешные входы", "Ошибки входа для текущей учётной записи", account && and(account, eventClass("4625", "4771", "4776", "USER_AUTH", "USER_LOGIN")), "Не найдена учётная запись"],
       ["auth-by-ip", "Аутентификация с IP", "Попытки входа с текущего адреса", ip && and(ip, eventClass("4624", "4625", "4648", "4771", "4776", "USER_AUTH", "USER_LOGIN")), "Не найден исходный или целевой IP"],
       ["process-on-host", "Запуски процессов на узле", "Windows 4688, Sysmon 1 и Linux EXECVE", host && and(host, eventClass("4688", "1", "EXECVE")), "Не найден узел"],
-      ["process-relatives", "Родительские и дочерние процессы", "Один слой связей по PID на том же узле", relatives && and(host, relatives, eventClass("4688", "1", "EXECVE")), graph ? "Не найдены PID/Parent PID" : "Для типа события не задан processGraph"],
+      ["process-relatives", "Родительские и дочерние процессы", "Интерактивный граф процессов на том же узле", graphAction?.where, graphReason],
       ["powershell-on-host", "PowerShell на узле", "Script Block 4104 и запуск PowerShell", host && and(host, or(eventClass("4104"), `DeviceProcessName = 'powershell.exe'`, `DestinationProcessName = 'powershell.exe'`)), "Не найден узел"],
       ["service-install", "Установка служб", "События 4697 и 7045 на текущем узле", host && and(host, eventClass("4697", "7045")), "Не найден узел"],
       ["network-by-process", "Сеть текущего процесса", "Sysmon 3 и Windows Filtering Platform 5156/5157", process && and(process, host, eventClass("3", "5156", "5157")), "Не найден процесс"],
@@ -62,8 +45,8 @@
     }));
   }
 
-  function findUsefulFilter(id, event, profiles) {
-    return buildUsefulFilters(event, profiles).find((filter) => filter.id === id && filter.applicable) || null;
+  function findUsefulFilter(id, event, profiles, processMappings) {
+    return buildUsefulFilters(event, profiles, processMappings).find((filter) => filter.id === id && filter.applicable) || null;
   }
 
   global.KumApeFilters = Object.freeze({ buildUsefulFilters, findUsefulFilter });

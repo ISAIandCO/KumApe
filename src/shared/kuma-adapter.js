@@ -7,7 +7,6 @@
   const CLUSTER_PAGE_SIZE = 250;
   const MAX_CLUSTER_PAGES = 20;
   const FIELD_KINDS = Object.freeze(["ip", "host", "account", "process", "command", "file", "hash", "domain", "url"]);
-  const PROCESS_GRAPH_KINDS = Object.freeze(["host", "pid", "parentPid", "processGuid", "parentGuid", "image", "commandLine", "user", "eventId"]);
 
   const FIELD_GROUPS = Object.freeze([
     {
@@ -78,10 +77,6 @@
         command: ["DeviceCustomString4"],
         account: ["SourceUserName", "DestinationUserName"],
         host: ["DeviceHostName"],
-      },
-      processGraph: {
-        host: ["DeviceHostName"], pid: ["DestinationProcessID", "DeviceProcessID"], parentPid: ["SourceProcessID"],
-        image: ["DestinationProcessName"], commandLine: ["DeviceCustomString4"], user: ["SourceUserName"], eventId: ["ID", "EventID"],
       },
     },
     {
@@ -161,11 +156,6 @@
         file: ["FilePath", "FileName", "DeviceCustomString3"],
         hash: ["FileHash"],
       },
-      processGraph: {
-        host: ["DeviceHostName"], pid: ["DeviceProcessID", "DestinationProcessID"], parentPid: ["SourceProcessID"],
-        processGuid: ["FlexString1"], parentGuid: ["FlexString2"], image: ["DeviceProcessName"],
-        commandLine: ["DeviceCustomString2", "DeviceCustomString4"], user: ["SourceUserName"], eventId: ["ID", "EventID"],
-      },
     },
     {
       name: "Sysmon: Network Connect (3)",
@@ -218,11 +208,6 @@
         process: ["DestinationProcessName", "DeviceProcessName"],
         command: ["FlexString1", "FlexString2"],
         file: ["FileName", "FilePath"],
-      },
-      processGraph: {
-        host: ["DeviceHostName"], pid: ["DeviceProcessID", "DestinationProcessID"], parentPid: ["SourceProcessID"],
-        image: ["DestinationProcessName", "DeviceProcessName"], commandLine: ["FlexString1", "FlexString2"],
-        user: ["SourceUserName", "SourceUserID"], eventId: ["ID", "EventID"],
       },
     },
     {
@@ -356,17 +341,7 @@
         if (!FIELD_KINDS.includes(kind)) throw new TypeError(`${name}: неизвестная группа ${kind}`);
         return [kind, normalizeFieldList(fieldList, `${name}.${kind}`)];
       }));
-      let processGraph;
-      if (profile.processGraph !== undefined) {
-        if (!profile.processGraph || typeof profile.processGraph !== "object" || Array.isArray(profile.processGraph)) {
-          throw new TypeError(`${name}: processGraph должен быть объектом`);
-        }
-        processGraph = Object.fromEntries(Object.entries(profile.processGraph).map(([kind, fieldList]) => {
-          if (!PROCESS_GRAPH_KINDS.includes(kind)) throw new TypeError(`${name}: неизвестное поле processGraph.${kind}`);
-          return [kind, normalizeFieldList(fieldList, `${name}.processGraph.${kind}`)];
-        }));
-      }
-      return { name, when, fields, ...(processGraph ? { processGraph } : {}) };
+      return { name, when, fields };
     });
   }
 
@@ -623,6 +598,7 @@
     iocsFromEvent,
     normalizeOrigin,
     normalizeFieldProfiles,
+    sqlIdentifier,
     valuesForAliases,
   });
 })(globalThis);

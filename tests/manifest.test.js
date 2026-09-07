@@ -19,7 +19,7 @@ test("manifest entry points and icons exist", async () => {
     manifest.options_ui.page,
     ...manifest.background.scripts,
     ...Object.values(manifest.icons),
-    "search/search.html",
+    "process-graph/graph.html",
     "workspace/workspace.html",
     "ai/assistant.html",
   ];

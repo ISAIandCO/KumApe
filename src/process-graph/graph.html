@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KumApe — граф процессов</title><link rel="stylesheet" href="graph.css"></head>
+<body>
+  <header>
+    <img src="../assets/icons/icon-48.png" alt=""><div><h1>Граф процессов</h1><p id="status" role="status">Загрузка событий KUMA…</p></div>
+    <div class="toolbar"><input id="search" type="search" placeholder="Процесс, PID, пользователь"><select id="scope"><option value="all">Все связи</option><option value="ancestors">Только предки</option><option value="descendants">Только потомки</option></select><select id="layout"><option value="force">Граф</option><option value="timeline">Временная шкала</option></select><button id="fit">Вместить</button><button id="zoom-in" aria-label="Увеличить">＋</button><button id="zoom-out" aria-label="Уменьшить">−</button></div>
+  </header>
+  <main><canvas id="graph"></canvas><aside id="details"><strong>Выберите процесс</strong><p>Клик — подробности, двойной клик — событие в KUMA, правая кнопка — закрепить подсказку.</p></aside><div id="tooltip" hidden></div></main>
+  <footer><details><summary>SQL выборки</summary><pre id="sql"></pre></details><span id="legend"><i class="source"></i> исходный процесс <i class="normal"></i> процесс <i class="match"></i> совпадение поиска</span></footer>
+  <script src="graph.js"></script>
+</body>
+</html>

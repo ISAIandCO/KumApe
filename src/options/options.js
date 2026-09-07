@@ -2,6 +2,40 @@
 
 const $ = (selector) => document.querySelector(selector);
 const api = globalThis.KumApeAdapter;
+const processApi = globalThis.KumApeProcess;
+const PROCESS_FIELDS = [
+  ["eventIdField", "Поле Event ID", true], ["eventIdValue", "Значение Event ID", true],
+  ["host", "Узел / host", true], ["pid", "PID процесса", true], ["parentPid", "PID родителя", true],
+  ["processGuid", "GUID процесса", false], ["parentGuid", "GUID родителя", false],
+  ["image", "Образ / путь", false], ["commandLine", "Командная строка", false],
+  ["user", "Пользователь", false], ["eventRecordId", "ID события KUMA", false],
+];
+
+function mappingCard(mapping = {}) {
+  const card = document.createElement("article"); card.className = "mapping-card";
+  const head = document.createElement("div"); head.className = "mapping-head";
+  const nameLabel = document.createElement("label"); nameLabel.textContent = "Название";
+  const name = document.createElement("input"); name.dataset.key = "name"; name.value = mapping.name || ""; name.placeholder = "Например, Windows Security 4688"; nameLabel.append(name);
+  const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Удалить"; remove.addEventListener("click", () => card.remove());
+  head.append(nameLabel, remove);
+  const grid = document.createElement("div"); grid.className = "mapping-grid";
+  for (const [key, title, required] of PROCESS_FIELDS) {
+    const label = document.createElement("label"); label.textContent = title;
+    const input = document.createElement("input"); input.dataset.key = key; input.value = mapping[key] || ""; input.required = required;
+    input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", pid: "DeviceCustomString3", parentPid: "DeviceCustomString5" }[key] || "Необязательно");
+    label.append(input); grid.append(label);
+  }
+  card.append(head, grid); return card;
+}
+
+function renderProcessMappings(mappings) {
+  const root = $("#process-mappings"); root.replaceChildren();
+  for (const mapping of mappings) root.append(mappingCard(mapping));
+}
+
+function collectProcessMappings() {
+  return [...document.querySelectorAll(".mapping-card")].map((card) => Object.fromEntries([...card.querySelectorAll("[data-key]")].map((input) => [input.dataset.key, input.value.trim()])));
+}
 
 function show(value, error = false) {
   $("#result").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -26,6 +60,7 @@ async function load() {
   $("#ui-origin").value = config.uiOrigin || "";
   $("#api-origin").value = config.apiOrigin || "";
   $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
+  renderProcessMappings(config.processMappings || processApi.BUILTIN_PROCESS_MAPPINGS);
   $("#ai-enabled").checked = Boolean(config.ai?.enabled);
   $("#ai-endpoint").value = config.ai?.endpoint || "http://127.0.0.1:8080/v1";
   $("#ai-model").value = config.ai?.model || "local-model";
@@ -49,6 +84,7 @@ async function save() {
     throw new Error(`Профили полей: некорректный JSON (${error.message})`);
   }
   const fieldProfiles = api.normalizeFieldProfiles(parsedProfiles);
+  const processMappings = processApi.normalizeMappings(collectProcessMappings());
   const ai = { enabled: $("#ai-enabled").checked, endpoint: $("#ai-endpoint").value.trim(), model: $("#ai-model").value.trim() || "local-model", privacyMode: $("#ai-privacy").value };
   const origins = [uiOrigin, apiOrigin];
   if (ai.enabled) {
@@ -58,7 +94,7 @@ async function save() {
   }
   const granted = await browser.permissions.request({ origins: [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
-  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, ai });
+  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, processMappings, ai });
   $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
   const token = $("#api-token").value.trim();
   if (token) {
@@ -112,6 +148,11 @@ $("#restore-profiles").addEventListener("click", () => {
 $("#clear-profiles").addEventListener("click", () => {
   $("#field-profiles").value = "[]";
   show("Профили очищены. После сохранения останется общий набор нормализованных полей.");
+});
+$("#add-process-mapping").addEventListener("click", () => $("#process-mappings").append(mappingCard({ eventIdField: "DeviceEventClassID" })));
+$("#restore-process-mappings").addEventListener("click", () => {
+  renderProcessMappings(processApi.BUILTIN_PROCESS_MAPPINGS);
+  show(`Подставлено настроек графа: ${processApi.BUILTIN_PROCESS_MAPPINGS.length}. Нажмите «Сохранить», чтобы применить.`);
 });
 $("#ui-origin").addEventListener("change", () => {
   if ($("#api-origin").value) return;
