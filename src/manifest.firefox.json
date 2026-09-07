@@ -33,6 +33,8 @@
   "background": {
     "scripts": [
       "shared/kuma-adapter.js",
+      "shared/useful-filters.js",
+      "shared/ai-privacy.js",
       "shared/ioc-providers.js",
       "background/ioc-lookup.js",
       "background/background.js",

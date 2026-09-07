@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const files = await Promise.all(["shared/kuma-adapter.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
 function storage(data) {
   return {
     async get(keys) {
@@ -17,17 +17,18 @@ function storage(data) {
 }
 function background(local = {}, session = {}, fetchImpl = () => { throw new Error("Unexpected network call"); }, granted = true) {
   let handler;
+  const createdTabs = [];
   const context = vm.createContext({ URL, AbortController, setTimeout, clearTimeout, TextEncoder, btoa,
     fetch: fetchImpl,
     browser: {
       storage: { local: storage(local), session: storage(session) },
       permissions: { contains: async () => granted },
       runtime: { getURL: (path) => `moz-extension://test/${path}`, onMessage: { addListener: (fn) => { handler = fn; } }, openOptionsPage: async () => {} },
-      tabs: { create: async () => {} },
+      tabs: { create: async (options) => { createdTabs.push(options); } },
     },
   });
   for (const file of files) vm.runInContext(file, context);
-  return { context, message: (message, sender) => handler(message, sender) };
+  return { context, createdTabs, message: (message, sender) => handler(message, sender) };
 }
 
 test("session token migrates once, survives background reload, and never appears in config", async () => {
@@ -70,6 +71,63 @@ test("events 403 identifies the missing POST permission without retrying or chan
   assert.match(response.error, /POST \/api\/v3\/events: HTTP 403/);
   assert.match(response.error, /одних GET-прав недостаточно/);
   assert.equal(requests, 1);
+});
+
+test("related query is rebuilt in background and new-tab URL contains only an opaque request id", async () => {
+  const session = {};
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", fieldProfiles: [] }, session);
+  const event = { SourceAddress: "8.8.8.8", Timestamp: "2026-09-07T00:00:00Z" };
+  const action = (await app.message({ type: "related:actions", event })).actions[0];
+  const query = await app.message({ type: "related:query", event, action: { ...action, where: "malicious = 'yes'" } });
+  assert.match(query.query, /SourceAddress = '8\.8\.8\.8'/);
+  assert.doesNotMatch(query.query, /malicious/);
+  const opened = await app.message({ type: "related:open-tab", event, action, rangeSeconds: 900 });
+  assert.equal(opened.ok, true);
+  assert.equal(app.createdTabs.length, 1);
+  const url = new URL(app.createdTabs[0].url);
+  assert.equal(url.pathname, "/search/search.html");
+  assert.equal(url.href.includes("8.8.8.8"), false);
+  assert.equal(url.href.includes("SELECT"), false);
+  assert.ok(session[`searchRequest:${url.searchParams.get("id")}`]);
+});
+
+test("useful filters are typed, hide predicates from UI, and reject an inapplicable id", async () => {
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c" });
+  const event = { DeviceEventClassID: "4688", DeviceHostName: "host01", DestinationProcessID: "42", SourceProcessID: "7" };
+  const result = await app.message({ type: "filters:list", event });
+  const processes = result.filters.find((filter) => filter.id === "process-on-host");
+  assert.equal(processes.applicable, true);
+  assert.equal("where" in processes, false);
+  const query = await app.message({ type: "filters:query", filterId: processes.id, event });
+  assert.match(query.query, /DeviceHostName = 'host01'/);
+  assert.equal((await app.message({ type: "filters:query", filterId: "events-by-hash", event })).ok, false);
+});
+
+test("local AI keeps event data out of URLs and sends only the prepared payload", async () => {
+  const session = {};
+  let body;
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "synthetic", privacyMode: "strict" } }, session, async (url, options) => {
+    assert.equal(url.href, "http://127.0.0.1:8080/v1/chat/completions");
+    body = JSON.parse(options.body);
+    return Response.json({ choices: [{ message: { content: "Локальный ответ" } }] });
+  });
+  const opened = await app.message({ type: "ai:open", event: { DeviceHostName: "host01", Raw: "SECRET-RAW", RequestCookies: "SECRET-COOKIE" } });
+  assert.equal(opened.ok, true);
+  const url = new URL(app.createdTabs[0].url);
+  assert.equal(url.pathname, "/ai/assistant.html");
+  assert.equal(url.href.includes("host01"), false);
+  const response = await app.message({ type: "ai:chat", id: url.searchParams.get("id"), messages: [{ role: "user", content: "Что произошло?" }] });
+  assert.equal(response.content, "Локальный ответ");
+  assert.match(JSON.stringify(body), /host01/);
+  assert.doesNotMatch(JSON.stringify(body), /SECRET-RAW|SECRET-COOKIE/);
+});
+
+test("local AI rejects non-loopback endpoints before network access", async () => {
+  const app = background({ ai: { enabled: true, endpoint: "https://example.org/v1", model: "x", privacyMode: "strict" } });
+  const response = await app.message({ type: "ai:open", event: { DeviceHostName: "host01" } });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /локальн/i);
+  assert.equal(app.createdTabs.length, 0);
 });
 
 test("content senders are restricted to configured KUMA and IOC messages; extension options still work", async () => {

@@ -19,6 +19,9 @@ test("manifest entry points and icons exist", async () => {
     manifest.options_ui.page,
     ...manifest.background.scripts,
     ...Object.values(manifest.icons),
+    "search/search.html",
+    "workspace/workspace.html",
+    "ai/assistant.html",
   ];
   await Promise.all(paths.map((file) => access(path.join(file.startsWith("assets/") ? root : path.join(root, "src"), file))));
 });

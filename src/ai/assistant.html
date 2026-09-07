@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KumApe — локальный AI</title><link rel="stylesheet" href="assistant.css"></head>
+<body>
+  <header><img src="../assets/icons/icon-48.png" alt=""><div><h1>Локальный AI</h1><p id="status" role="status">Загружаю контекст…</p></div></header>
+  <main>
+    <aside><h2>Что будет отправлено</h2><dl><dt>Endpoint</dt><dd id="endpoint">локальный из настроек</dd><dt>Privacy</dt><dd id="privacy">—</dd><dt>Размер контекста</dt><dd id="bytes">—</dd></dl><h3>Поля</h3><ul id="fields"></ul><p>Raw, Extra, cookies и ключи в strict-режиме не отправляются.</p></aside>
+    <section><div id="chat" aria-live="polite"></div><form id="form"><textarea id="prompt" required placeholder="Что произошло и что проверить дальше?"></textarea><div><button type="submit">Отправить локальной модели</button><button type="button" id="clear">Очистить диалог</button></div></form></section>
+  </main>
+  <script src="assistant.js"></script>
+</body>
+</html>

@@ -26,6 +26,10 @@ async function load() {
   $("#ui-origin").value = config.uiOrigin || "";
   $("#api-origin").value = config.apiOrigin || "";
   $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
+  $("#ai-enabled").checked = Boolean(config.ai?.enabled);
+  $("#ai-endpoint").value = config.ai?.endpoint || "http://127.0.0.1:8080/v1";
+  $("#ai-model").value = config.ai?.model || "local-model";
+  $("#ai-privacy").value = config.ai?.privacyMode || "strict";
   renderClusters([], config.clusterId || "");
   if (config.clusterId) {
     $("#cluster-id").add(new Option(config.clusterId, config.clusterId));
@@ -45,9 +49,16 @@ async function save() {
     throw new Error(`Профили полей: некорректный JSON (${error.message})`);
   }
   const fieldProfiles = api.normalizeFieldProfiles(parsedProfiles);
-  const granted = await browser.permissions.request({ origins: [...new Set([uiOrigin, apiOrigin].map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
+  const ai = { enabled: $("#ai-enabled").checked, endpoint: $("#ai-endpoint").value.trim(), model: $("#ai-model").value.trim() || "local-model", privacyMode: $("#ai-privacy").value };
+  const origins = [uiOrigin, apiOrigin];
+  if (ai.enabled) {
+    const endpoint = new URL(ai.endpoint);
+    if (!/^https?:$/.test(endpoint.protocol) || !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)) throw new Error("AI endpoint должен быть локальным: localhost, 127.0.0.1 или [::1]");
+    origins.push(endpoint.origin);
+  }
+  const granted = await browser.permissions.request({ origins: [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
-  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles });
+  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, ai });
   $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
   const token = $("#api-token").value.trim();
   if (token) {
@@ -62,6 +73,7 @@ $("#settings").addEventListener("submit", (event) => {
   event.preventDefault();
   save().catch((error) => show(error.message, true));
 });
+$("#save-ai").addEventListener("click", () => save().catch((error) => show(error.message, true)));
 $("#clear-token").addEventListener("click", async () => {
   await browser.storage.session.remove("apiToken");
   await browser.storage.local.remove("apiToken");

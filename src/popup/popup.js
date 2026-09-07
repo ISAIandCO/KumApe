@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const state = { tab: null, config: null, context: null, relatedActions: [] };
+const state = { tab: null, config: null, context: null, relatedActions: [], filters: [] };
 
 $("#version").textContent = browser.runtime.getManifest().version;
 
@@ -128,12 +128,43 @@ async function renderRelated() {
         setStatus(`Найдено событий: ${result.result.events.length}`);
       }),
       button("Копировать SQL", async () => {
-        const query = `SELECT * FROM \`events\` WHERE ${action.where} ORDER BY Timestamp DESC LIMIT 250`;
-        await navigator.clipboard.writeText(query);
+        const response = await send({ type: "related:query", action, event: state.context.event, limit: 250 });
+        await navigator.clipboard.writeText(response.query);
         setStatus("SQL скопирован");
+      }),
+      button("Открыть в новой вкладке", async () => {
+        await send({ type: "related:open-tab", action, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 });
+        setStatus("Результаты открыты в новой вкладке");
       }),
     );
   }
+}
+
+async function renderFilters() {
+  const container = $("#filter-list"); container.replaceChildren(); state.filters = [];
+  if (!state.context?.event) { container.textContent = "Нужны структурированные поля текущего события."; return; }
+  const response = await send({ type: "filters:list", event: state.context.event }); state.filters = response.filters;
+  for (const filter of response.filters) {
+    const actions = addCard(container, filter.title, filter.applicable ? filter.description : filter.reason);
+    const card = actions.parentElement; if (!filter.applicable) { card.classList.add("unavailable"); continue; }
+    actions.append(
+      button("Найти", async () => {
+        setStatus(`Применяю фильтр «${filter.title}»…`);
+        const response = await send({ type: "filters:search", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 });
+        activatePanel("related"); $("#related-result").hidden = false; $("#related-result").textContent = JSON.stringify({ query: response.result.query, count: response.result.events.length, events: response.result.events }, null, 2); setStatus(`Найдено событий: ${response.result.events.length}`);
+      }),
+      button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 250 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
+      button("Открыть", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 }); setStatus("Результаты открыты в новой вкладке"); }),
+    );
+  }
+}
+
+async function renderInvestigations() {
+  if (!globalThis.KumApeInvestigations || !globalThis.indexedDB) { $("#add-investigation").disabled = !state.context?.event; return; }
+  const select = $("#investigation-select"); const previous = select.value; select.replaceChildren(new Option("Новое расследование…", ""));
+  for (const investigation of await globalThis.KumApeInvestigations.listInvestigations()) if (investigation.status === "open") select.add(new Option(investigation.title, investigation.id));
+  if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  $("#add-investigation").disabled = !state.context?.event;
 }
 
 async function renderIocs() {
@@ -174,7 +205,8 @@ async function renderContext() {
   $("#event-json").textContent = output || "Событие не найдено. Откройте карточку события или область Raw.";
   $("#event-source").textContent = context?.source ? `Источник: ${context.source}` : "";
   $("#copy-json").disabled = !output;
-  await Promise.all([renderRelated(), renderIocs()]);
+  $("#open-ai").disabled = !context?.event;
+  await Promise.all([renderRelated(), renderFilters(), renderIocs(), renderInvestigations()]);
   const id = ruleId(context?.event);
   $("#rule-id").textContent = id ? `ID: ${id}` : "ID правила в событии не найден.";
   $("#load-rule").disabled = !id;
@@ -234,6 +266,16 @@ $("#copy-link").addEventListener("click", async () => {
   await navigator.clipboard.writeText(state.tab.url);
   setStatus("Ссылка скопирована");
 });
+$("#add-investigation").addEventListener("click", async () => {
+  try {
+    let id = $("#investigation-select").value;
+    if (!id) { const title = prompt("Название нового расследования", globalThis.KumApeInvestigations.describeEvent(state.context.event)); if (title === null) return; id = (await globalThis.KumApeInvestigations.createInvestigation(title)).id; }
+    await globalThis.KumApeInvestigations.addEvent(id, state.context.event, { uiOrigin: state.config.uiOrigin, url: state.tab.url });
+    await renderInvestigations(); $("#investigation-select").value = id; setStatus("Событие добавлено в расследование");
+  } catch (error) { setStatus(error.message, true); }
+});
+$("#open-workspace").addEventListener("click", () => send({ type: "workspace:open", id: $("#investigation-select").value }).catch((error) => setStatus(error.message, true)));
+$("#open-ai").addEventListener("click", () => send({ type: "ai:open", event: state.context?.event }).catch((error) => setStatus(error.message, true)));
 $("#load-rule").addEventListener("click", async () => {
   try {
     setStatus("Загружаю правило…");

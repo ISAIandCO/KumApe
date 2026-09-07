@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; color: CanvasText; background: Canvas; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, transparent); }
+header img { width: 46px; height: 46px; object-fit: contain; }
+h1, p { margin: 0; } h1 { font-size: 20px; } #status { opacity: .72; }
+main { padding: 18px 20px; } .actions { display: flex; gap: 8px; margin-bottom: 12px; }
+button { padding: 7px 11px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; background: color-mix(in srgb, Canvas 92%, #00a9c6); color: CanvasText; cursor: pointer; }
+button:disabled { opacity: .45; } pre { padding: 10px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; background: color-mix(in srgb, CanvasText 7%, Canvas); }
+.table-wrap { overflow: auto; margin-top: 14px; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; } th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent); overflow-wrap: anywhere; }
+th { position: sticky; top: 0; background: Canvas; white-space: nowrap; } td details pre { max-height: 320px; min-width: 420px; }
+.empty { padding: 18px; opacity: .7; }

@@ -22,6 +22,7 @@
   <nav id="tabs" aria-label="Инструменты" hidden>
     <button class="active" data-panel="event">Событие</button>
     <button data-panel="related">Связанные</button>
+    <button data-panel="filters">Фильтры</button>
     <button data-panel="ioc">IOC</button>
     <button data-panel="rule">Правило</button>
   </nav>
@@ -34,8 +35,15 @@
         <button id="copy-json" disabled>Копировать</button>
         <button id="copy-link">Копировать ссылку</button>
         <button id="refresh">Обновить</button>
+        <button id="open-ai">Локальный AI</button>
       </div>
+      <div class="investigation-actions"><select id="investigation-select" aria-label="Расследование"><option value="">Новое расследование…</option></select><button id="add-investigation" disabled>Добавить в расследование</button><button id="open-workspace">Открыть расследования</button></div>
       <p class="hint">KumApe читает атрибуты полей открытой карточки. Область «Исходное событие» используется для получения Raw-текста.</p>
+    </section>
+
+    <section id="filters" class="panel">
+      <div class="section-title"><h2>Полезные фильтры</h2><span class="hint">SQL строится из контекста события</span></div>
+      <div id="filter-list" class="card-list"></div>
     </section>
 
     <section id="related" class="panel">
@@ -59,6 +67,8 @@
   </main>
 
   <footer>KumApe · KUMA Analyst Productivity Extension · независимый open-source проект</footer>
+  <script src="../shared/kuma-adapter.js"></script>
+  <script src="../shared/investigation-db.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

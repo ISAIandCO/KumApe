@@ -14,6 +14,9 @@
     const value = node.getAttribute("kuma-data") || node.querySelector(":scope > span:nth-of-type(2)")?.textContent?.trim() || "";
     return global.KumApeAdapter.iocsFromEvent({ [field]: value })[0] || null;
   }
+  function fieldLabel(node) {
+    return node.querySelector(":scope > span:nth-of-type(1)") || null;
+  }
   function close() {
     if (!opened) return;
     opened.anchor.setAttribute("aria-expanded", "false");
@@ -126,16 +129,16 @@
         button.type = "button";
         button.textContent = "🐵";
         button.title = "KumApe: проверить IOC";
-        button.setAttribute("aria-label", "KumApe: проверить IOC");
+        button.setAttribute("aria-label", `KumApe: проверить IOC в поле ${node.getAttribute("kuma-id") || ""}`);
         button.setAttribute("aria-haspopup", "dialog");
         button.setAttribute("aria-expanded", "false");
-        button.style.cssText = "margin-inline-start:4px;padding:1px 4px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:14px";
+        button.style.cssText = "margin-inline-start:0;margin-inline-end:4px;padding:1px 4px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:14px;vertical-align:baseline";
         button.addEventListener("click", (event) => {
           event.preventDefault(); event.stopPropagation();
           if (event.isTrusted) open(button, node);
         });
         shadow.append(button);
-        node.append(host);
+        (fieldLabel(node) || node).prepend(host);
         buttons.set(node, host);
       }
     }
