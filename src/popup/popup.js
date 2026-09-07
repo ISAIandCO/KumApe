@@ -44,15 +44,20 @@ async function extractContext() {
   let target = { tabId: state.tab.id, allFrames: true };
   let results;
   try {
-    results = await browser.scripting.executeScript({ target, files: ["content/content.js"] });
+    results = await browser.scripting.executeScript({ target, files: ["/content/content.js"] });
   } catch {
     target = { tabId: state.tab.id };
-    results = await browser.scripting.executeScript({ target, files: ["content/content.js"] });
+    results = await browser.scripting.executeScript({ target, files: ["/content/content.js"] });
   }
-  return results
+  const context = results
     .map((item) => item.result)
     .filter(Boolean)
     .sort((a, b) => b.score - a.score)[0] || null;
+  if (!context) {
+    const error = results.find((item) => item.error)?.error;
+    throw new Error(error?.message || (error && String(error)) || "Скрипт чтения карточки не вернул результат. Перезагрузите расширение и вкладку KUMA.");
+  }
+  return context;
 }
 
 function activatePanel(id) {
