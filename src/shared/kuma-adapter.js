@@ -4,6 +4,8 @@
   const DEFAULT_RANGE_SECONDS = 15 * 60;
   const DEFAULT_LIMIT = 250;
   const MAX_LIMIT = 1000;
+  const CLUSTER_PAGE_SIZE = 250;
+  const MAX_CLUSTER_PAGES = 20;
   const FIELD_KINDS = Object.freeze(["ip", "host", "account", "process", "command", "file", "hash", "domain", "url"]);
 
   const FIELD_GROUPS = Object.freeze([
@@ -501,14 +503,44 @@
       return this.request({ origin: this.uiOrigin, path: "/api/whoami", method: "GET" });
     }
 
-    async getClusters() {
-      const response = await this.request({
+    getApiCurrentUser() {
+      if (!this.token) throw new Error("API-токен не загружен в текущую сессию Firefox");
+      return this.request({
         origin: this.apiOrigin,
-        path: "/api/v3/events/clusters",
+        path: "/api/v3/users/whoami",
         method: "GET",
         token: this.token,
       });
-      return clustersFromResponse(response);
+    }
+
+    async getClusters() {
+      const clusters = [];
+      const seen = new Set();
+      for (let page = 1; page <= MAX_CLUSTER_PAGES; page += 1) {
+        const response = await this.request({
+          origin: this.apiOrigin,
+          path: `/api/v3/events/clusters?page=${page}`,
+          method: "GET",
+          token: this.token,
+        });
+        const current = clustersFromResponse(response);
+        for (const cluster of current) {
+          if (seen.has(cluster.id)) continue;
+          seen.add(cluster.id);
+          clusters.push(cluster);
+        }
+        if (current.length < CLUSTER_PAGE_SIZE) return clusters;
+      }
+      throw new Error(`KUMA вернула более ${MAX_CLUSTER_PAGES * CLUSTER_PAGE_SIZE} кластеров. Уточните выбор через tenantID или name`);
+    }
+
+    getExtendedFields() {
+      return this.request({
+        origin: this.apiOrigin,
+        path: "/api/v3/settings/extendedFields/export",
+        method: "GET",
+        token: this.token,
+      });
     }
 
     async searchRelated(action, event, rangeSeconds = DEFAULT_RANGE_SECONDS, limit = DEFAULT_LIMIT) {
@@ -538,9 +570,10 @@
 
     getCorrelationRule(id) {
       return this.request({
-        origin: this.uiOrigin,
-        path: `/api/private/resources/correlationRule/${encodeURIComponent(id)}`,
+        origin: this.apiOrigin,
+        path: `/api/v3/resources/correlationRule/${encodeURIComponent(id)}`,
         method: "GET",
+        token: this.token,
       });
     }
   }

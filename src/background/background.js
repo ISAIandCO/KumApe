@@ -9,8 +9,10 @@ const DEFAULT_CONFIG = Object.freeze({
 });
 const ALLOWED_REQUESTS = Object.freeze([
   { method: "GET", base: "ui", pattern: /^\/api\/whoami$/ },
-  { method: "GET", base: "ui", pattern: /^\/api\/private\/resources\/correlationRule\/[^/?#]+$/ },
+  { method: "GET", base: "api", pattern: /^\/api\/v3\/users\/whoami$/ },
   { method: "GET", base: "api", pattern: /^\/api\/v3\/events\/clusters(?:\?[^#]*)?$/ },
+  { method: "GET", base: "api", pattern: /^\/api\/v3\/settings\/extendedFields\/export$/ },
+  { method: "GET", base: "api", pattern: /^\/api\/v3\/resources\/correlationRule\/[^/?#]+$/ },
   { method: "POST", base: "api", pattern: /^\/api\/v3\/events$/ },
 ]);
 
@@ -78,7 +80,7 @@ async function kumaRequest({ origin, path, method = "GET", token, body }) {
   try {
     const response = await fetch(new URL(path, normalizedOrigin), {
       method,
-      credentials: "include",
+      credentials: rule.base === "ui" ? "include" : "omit",
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
@@ -111,8 +113,12 @@ browser.runtime.onMessage.addListener(async (message) => {
       }
       case "session:test":
         return { ok: true, user: await (await adapter()).getCurrentUser() };
+      case "api:test":
+        return { ok: true, user: await (await adapter()).getApiCurrentUser() };
       case "clusters:list":
         return { ok: true, clusters: await (await adapter()).getClusters() };
+      case "extended-fields:list":
+        return { ok: true, fields: await (await adapter()).getExtendedFields() };
       case "related:actions":
         {
           const config = await loadConfig();

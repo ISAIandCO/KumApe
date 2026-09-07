@@ -17,7 +17,10 @@
 - [ ] «Только общие поля» отключает event-specific overrides, а «Вернуть рекомендуемые профили» восстанавливает каталог.
 - [ ] После перезапуска Firefox токен нужно ввести заново.
 - [ ] «Проверить web-сессию» возвращает текущего пользователя либо понятную ошибку endpoint-а.
+- [ ] «Проверить REST API и токен» различает отсутствие токена, сетевую ошибку и HTTP 401/403.
 - [ ] «Получить кластеры REST API» показывает доступные storage clusters.
+- [ ] При наличии более 250 кластеров загружаются следующие страницы без повторов.
+- [ ] «Показать расширенные поля» возвращает схему либо понятный `403` для роли без соответствующего права.
 
 ## Текущее событие
 
@@ -69,9 +72,11 @@
 | Проверка | Фактический endpoint / поле | Результат | Примечание |
 |---|---|---|---|
 | Web session | `GET /api/whoami` | Не проверено | |
-| Clusters | `GET /api/v3/events/clusters` | Не проверено | |
-| Event search | `POST /api/v3/events` | Не проверено | |
+| REST token | `GET /api/v3/users/whoami` | Подтверждено Swagger | |
+| Clusters | `GET /api/v3/events/clusters` | Подтверждено Swagger | |
+| Event search | `POST /api/v3/events` | Подтверждено Swagger | |
 | Event fields DOM | `[kuma-section="event-field"]` + `kuma-id` / `kuma-data` | Подтверждено образцом | |
 | Raw event DOM | `[kuma-section="raw"] pre` | Подтверждено образцом | |
 | Correlation rule ID | `CorrelationRuleID` / другое | Не проверено | |
-| Correlation rule resource | `/api/private/resources/correlationRule/{id}` | Не проверено | |
+| Extended fields | `GET /api/v3/settings/extendedFields/export` | Подтверждено Swagger | |
+| Correlation rule resource | `GET /api/v3/resources/correlationRule/{id}` | Подтверждено Swagger | |

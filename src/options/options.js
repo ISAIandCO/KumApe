@@ -66,6 +66,9 @@ $("#clear-token").addEventListener("click", async () => {
 $("#test-session").addEventListener("click", async () => {
   try { show((await send({ type: "session:test" })).user); } catch (error) { show(error.message, true); }
 });
+$("#test-api").addEventListener("click", async () => {
+  try { show((await send({ type: "api:test" })).user); } catch (error) { show(error.message, true); }
+});
 $("#open-api").addEventListener("click", async () => {
   try {
     const origin = api.normalizeOrigin($("#api-origin").value);
@@ -80,6 +83,9 @@ $("#load-clusters").addEventListener("click", async () => {
     renderClusters(response.clusters, selected);
     show(response.clusters);
   } catch (error) { show(error.message, true); }
+});
+$("#load-extended-fields").addEventListener("click", async () => {
+  try { show((await send({ type: "extended-fields:list" })).fields); } catch (error) { show(error.message, true); }
 });
 $("#restore-profiles").addEventListener("click", () => {
   $("#field-profiles").value = JSON.stringify(api.BUILTIN_FIELD_PROFILES, null, 2);

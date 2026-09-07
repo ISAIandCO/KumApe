@@ -123,6 +123,57 @@ test("sends a bounded read-only events request through the adapter", async () =>
   assert.deepEqual(result.events, [{ ID: "event-1" }]);
 });
 
+test("uses the documented public REST endpoints for identity, fields and correlation rules", async () => {
+  const calls = [];
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+    token: "secret",
+  }, async (request) => {
+    calls.push(request);
+    return { ok: true };
+  });
+
+  await adapter.getApiCurrentUser();
+  await adapter.getExtendedFields();
+  await adapter.getCorrelationRule("rule/1");
+
+  assert.deepEqual(calls.map(({ origin, path, method, token }) => ({ origin, path, method, token })), [
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/users/whoami", method: "GET", token: "secret" },
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/settings/extendedFields/export", method: "GET", token: "secret" },
+    { origin: "https://kuma.example.local:7223", path: "/api/v3/resources/correlationRule/rule%2F1", method: "GET", token: "secret" },
+  ]);
+});
+
+test("requires a token before testing the public REST identity", async () => {
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+  }, async () => assert.fail("request must not run without a token"));
+  assert.throws(() => adapter.getApiCurrentUser(), /API-токен не загружен/);
+});
+
+test("loads every documented cluster page and removes duplicate IDs", async () => {
+  const calls = [];
+  const firstPage = Array.from({ length: 250 }, (_, index) => ({ id: `cluster-${index}`, name: `Cluster ${index}` }));
+  const adapter = new api.KumaAdapter({
+    uiOrigin: "https://kuma.example.local:7220",
+    apiOrigin: "https://kuma.example.local:7223",
+    token: "secret",
+  }, async (request) => {
+    calls.push(request);
+    return request.path.endsWith("page=1") ? firstPage : [{ id: "cluster-249", name: "Duplicate" }, { id: "cluster-250", name: "Last" }];
+  });
+
+  const clusters = await adapter.getClusters();
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/api/v3/events/clusters?page=1",
+    "/api/v3/events/clusters?page=2",
+  ]);
+  assert.equal(clusters.length, 251);
+  assert.equal(clusters.at(-1).id, "cluster-250");
+});
+
 test("requires a storage cluster choice when Core exposes several", async () => {
   const adapter = new api.KumaAdapter({
     uiOrigin: "https://kuma.example.local:7220",

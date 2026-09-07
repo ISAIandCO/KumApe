@@ -1,12 +1,12 @@
 # Поверхности KUMA и модель полей
 
-Актуальность исследования: 2026-09-04. Документ нужен для дальнейшего развития KumApe без доступа к рабочей KUMA. Он разделяет официальный контракт, поведение веб-интерфейса и выводы из community-проектов.
+Актуальность исследования: 2026-09-07. Документ нужен для дальнейшего развития KumApe без доступа к рабочей KUMA. Он разделяет официальный контракт, поведение веб-интерфейса и выводы из community-проектов.
 
 ## Три поверхности интеграции
 
 | Поверхность | Вход и авторизация | Что полезно KumApe | Надёжность |
 |---|---|---|---|
-| Public REST KUMA Core | `:7223`, Bearer token | кластеры хранения, SQL-поиск событий, дальнейшие read-only сущности | порт и авторизация описаны официально; конкретные маршруты нужно проверять на целевой версии |
+| Public REST KUMA Core | `:7223`, Bearer token | кластеры хранения, SQL-поиск событий, пользователи и read-only ресурсы | используемые маршруты подтверждены OpenAPI KUMA 4.6 |
 | Web API интерфейса | origin веб-интерфейса (`:7220` по умолчанию), cookie текущей сессии | ресурсы, зависимости, службы, папки, строки Active List | private API, может меняться без обратной совместимости |
 | DOM веб-интерфейса | открытая вкладка и разрешение Firefox на её origin | поля уже открытой карточки и Raw без повторного запроса | зависит от DOM; используются машинные `kuma-*` атрибуты, а не CSS-классы |
 
@@ -15,17 +15,19 @@
 ### Подтверждённый минимум KumApe
 
 - `GET :7220/api/whoami` — проверка существующей web-сессии;
+- `GET :7223/api/v3/users/whoami` — проверка REST-токена и его прав;
 - `GET :7223/api/v3/events/clusters` — список доступных storage clusters;
 - `POST :7223/api/v3/events` — read-only SQL-поиск событий;
-- `GET :7220/api/private/resources/correlationRule/{id}` — чтение правила по ID;
+- `GET :7223/api/v3/resources/correlationRule/{id}` — чтение правила по ID;
+- `GET :7223/api/v3/settings/extendedFields/export` — расширенная схема полей инсталляции;
 - `[kuma-section="event-field"][kuma-id]` + `kuma-data` — поля открытой карточки;
 - `[kuma-section="raw"] pre` — Raw открытой карточки.
 
-Первые четыре маршрута получены из community-клиентов и должны быть подтверждены на KUMA 4.6. DOM-селекторы подтверждены только для исследованной разметки. Read-only allowlist расширения намеренно не включает другие маршруты.
+REST-маршруты подтверждены официальной схемой KUMA Public API 3.0 для KUMA 4.6. Web-session endpoint и DOM-селекторы подтверждены только для исследованной разметки и требуют проверки на целевой инсталляции. Read-only allowlist расширения намеренно не включает другие маршруты.
 
 ### Кандидаты для следующих read-only функций
 
-В `KUMA-Community/kapi` встречаются публичные операции чтения событий, alerts, incidents, assets, reports, users/whoami, tenants, dictionaries, resources, folders, services, Active Lists, context tables и extended fields. В community-клиентах web API встречаются:
+Официальная OpenAPI-схема также содержит операции чтения alerts, incidents, assets, reports, tenants, dictionaries, folders, services, Active Lists и context tables. В community-клиентах web API встречаются:
 
 - `/api/private/tenants/`;
 - `/api/private/resources/{kind}` и `/api/private/resources/{kind}/{id}`;
