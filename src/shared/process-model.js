@@ -2,11 +2,12 @@
   "use strict";
 
   const api = global.KumApeAdapter;
-  const FIELD_KEYS = Object.freeze(["host", "pid", "parentPid", "processGuid", "parentGuid", "image", "commandLine", "user", "eventRecordId"]);
+  const FIELD_KEYS = Object.freeze(["host", "pid", "parentPid", "processGuid", "parentGuid", "image", "commandLine", "user", "eventRecordId", "fallbackPid", "fallbackParentPid"]);
   const BUILTIN_PROCESS_MAPPINGS = Object.freeze([
     Object.freeze({
       name: "Windows Security 4688", eventIdField: "DeviceEventClassID", eventIdValue: "4688",
-      host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
+      host: "DeviceHostName", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3",
+      fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID",
       processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "DeviceCustomString4",
       user: "SourceUserName", eventRecordId: "ID",
     }),
@@ -47,6 +48,7 @@
         eventIdValue,
       };
       for (const key of FIELD_KEYS) normalized[key] = safeField(mapping[key], ["host", "pid", "parentPid"].includes(key), `${context}.${key}`);
+      if (Boolean(normalized.fallbackPid) !== Boolean(normalized.fallbackParentPid)) throw new TypeError(`${context}: укажите оба резервных PID-поля`);
       return normalized;
     });
   }
@@ -63,10 +65,18 @@
     return field ? api.valuesForAliases(event, [field])[0] || "" : "";
   }
 
+  function normalizePid(value) {
+    const text = String(value || "").trim();
+    try { return /^(?:0x[0-9a-f]+|[0-9]+)$/i.test(text) ? BigInt(text).toString() : text; } catch { return text; }
+  }
+
   function processFields(event, mapping) {
     if (!mapping) return null;
+    const fallback = (!first(event, mapping.pid) || !first(event, mapping.parentPid)) && first(event, mapping.fallbackPid);
+    const pid = first(event, fallback ? mapping.fallbackPid : mapping.pid);
+    const parentPid = first(event, fallback ? mapping.fallbackParentPid : mapping.parentPid);
     return {
-      host: first(event, mapping.host), pid: first(event, mapping.pid), parentPid: first(event, mapping.parentPid),
+      host: first(event, mapping.host), pid: normalizePid(pid), parentPid: normalizePid(parentPid),
       processGuid: first(event, mapping.processGuid), parentGuid: first(event, mapping.parentGuid),
       image: first(event, mapping.image), commandLine: first(event, mapping.commandLine), user: first(event, mapping.user),
       eventRecordId: first(event, mapping.eventRecordId), timestamp: api.eventTimestamp(event),
@@ -86,7 +96,7 @@
 
   function eventKey(fields) {
     if (fields.processGuid) return `guid:${fields.host.toLowerCase()}:${fields.processGuid.toLowerCase()}`;
-    if (fields.eventRecordId) return `event:${fields.eventRecordId}`;
+    if (fields.eventRecordId) return `event:${fields.host.toLowerCase()}:${fields.eventRecordId}`;
     return `pid:${fields.host.toLowerCase()}:${fields.pid}:${fields.timestamp}:${fields.image.toLowerCase()}`;
   }
 
@@ -103,9 +113,7 @@
       const id = eventKey(fields);
       if (keys.has(id)) continue;
       keys.add(id);
-      const compactEvent = { [mapping.eventIdField]: mapping.eventIdValue, Timestamp: new Date(fields.timestamp).toISOString() };
-      if (mapping.eventRecordId && fields.eventRecordId) compactEvent[mapping.eventRecordId] = fields.eventRecordId;
-      nodes.push({ id, ...fields, event: compactEvent, mappingName: mapping.name, source: index === 0 });
+      nodes.push({ id, ...fields, event: event, mappingName: mapping.name, source: index === 0 });
     }
     let sourceNodeId = nodes.find((node) => node.source)?.id || null;
     const guidIndex = new Map(nodes.filter((node) => node.processGuid).map((node) => [`${node.host.toLowerCase()}\0${node.processGuid.toLowerCase()}`, node]));
@@ -119,7 +127,7 @@
     const edges = [];
     for (const child of nodes) {
       let parent = child.parentGuid ? guidIndex.get(`${child.host.toLowerCase()}\0${child.parentGuid.toLowerCase()}`) : null;
-      if (!parent && child.parentPid) {
+      if (!parent && !child.parentGuid && child.parentPid) {
         const candidates = pidIndex.get(`${child.host.toLowerCase()}\0${child.parentPid}`) || [];
         for (const candidate of candidates) {
           if (candidate.id !== child.id && candidate.timestamp <= child.timestamp && child.timestamp - candidate.timestamp <= 86_400_000) parent = candidate;
@@ -129,6 +137,39 @@
     }
     if (!sourceNodeId && nodes.length) sourceNodeId = nodes[0].id;
     return { nodes, edges, sourceNodeId };
+  }
+
+  function relatedAction(event, mappings, direction = "both") {
+    if (!["parents", "children", "both", "siblings"].includes(direction)) throw new Error("Неизвестное направление поиска");
+    const source = processFields(event, mappingForEvent(event, mappings));
+    if (!source?.host || !source.pid) throw new Error("Не найдены узел/PID процесса");
+    const clauses = [];
+    for (const mapping of normalizeMappings(mappings)) {
+      const relations = [];
+      const pairs = [[mapping.pid, mapping.parentPid], [mapping.fallbackPid, mapping.fallbackParentPid]].filter(([pid, parent]) => pid && parent);
+      const eq = (field, value) => {
+        const values = new Set([value]);
+        if (/^[0-9]+$/.test(value)) values.add(`0x${BigInt(value).toString(16)}`);
+        return `(${[...values].map(v => api.equalityWhere([field], v)).join(" OR ")})`;
+      };
+      for (const [pid, parent] of pairs) {
+        if (["parents", "both"].includes(direction) && source.parentPid) relations.push(eq(pid, source.parentPid));
+        if (["children", "both"].includes(direction)) relations.push(eq(parent, source.pid));
+        if (direction === "siblings" && source.parentPid) relations.push(eq(parent, source.parentPid));
+      }
+      if (relations.length) clauses.push(`(${api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${relations.join(" OR ")}))`);
+    }
+    if (!clauses.length) throw new Error("Нет полей для выбранного направления");
+    return { where: `(${clauses.join(" OR ")})` };
+  }
+
+  function connectedGraph(graph, anchorId, direction = "both") {
+    const ids = new Set([anchorId]);
+    for (const edge of graph.edges) {
+      if (["parents", "both"].includes(direction) && edge.target === anchorId) ids.add(edge.source);
+      if (["children", "both"].includes(direction) && edge.source === anchorId) ids.add(edge.target);
+    }
+    return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
   }
 
   function mappingsFromLegacyProfiles(profiles) {
@@ -151,5 +192,5 @@
     return result;
   }
 
-  global.KumApeProcess = Object.freeze({ BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
+  global.KumApeProcess = Object.freeze({ BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, connectedGraph, normalizePid, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
 })(globalThis);

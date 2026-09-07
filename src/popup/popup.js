@@ -117,14 +117,7 @@ async function renderRelated() {
           rangeSeconds: Number($("#range").value),
           limit: 250,
         });
-        $("#related-result").hidden = false;
-        $("#related-result").textContent = JSON.stringify({
-          query: result.result.query,
-          period: result.result.period,
-          clusterId: result.result.clusterId,
-          count: result.result.events.length,
-          events: result.result.events,
-        }, null, 2);
+        renderResults(result.result);
         setStatus(`Найдено событий: ${result.result.events.length}`);
       }),
       button("Копировать SQL", async () => {
@@ -159,7 +152,7 @@ async function renderFilters() {
       button("Найти", async () => {
         setStatus(`Применяю фильтр «${filter.title}»…`);
         const response = await send({ type: "filters:search", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 });
-        activatePanel("related"); $("#related-result").hidden = false; $("#related-result").textContent = JSON.stringify({ query: response.result.query, count: response.result.events.length, events: response.result.events }, null, 2); setStatus(`Найдено событий: ${response.result.events.length}`);
+        activatePanel("related"); renderResults(response.result); setStatus(`Найдено событий: ${response.result.events.length}`);
       }),
       button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 250 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
       button("Открыть в KUMA", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 }); setStatus("Фильтр передан в новую вкладку KUMA"); }),
@@ -283,7 +276,7 @@ $("#add-investigation").addEventListener("click", async () => {
   } catch (error) { setStatus(error.message, true); }
 });
 $("#open-workspace").addEventListener("click", () => send({ type: "workspace:open", id: $("#investigation-select").value }).catch((error) => setStatus(error.message, true)));
-$("#open-ai").addEventListener("click", () => send({ type: "ai:open", event: state.context?.event }).catch((error) => setStatus(error.message, true)));
+$("#open-ai").addEventListener("click", () => send({ type: "ai:open", event: state.context?.event, sourceTabId: state.tab?.id }).catch((error) => setStatus(error.message, true)));
 $("#load-rule").addEventListener("click", async () => {
   try {
     setStatus("Загружаю правило…");
@@ -294,3 +287,26 @@ $("#load-rule").addEventListener("click", async () => {
 });
 
 initialize().catch((error) => setStatus(error.message, true));
+
+$("#process").addEventListener("click", event => {
+  const layout=event.target.closest("[data-graph]")?.dataset.graph;
+  if (layout) send({type:"process:open-graph",event:state.context?.event,rangeSeconds:layout === "step" ? 3600 : Number($("#range").value),layout}).catch(error => setStatus(error.message,true));
+});
+$("#download-json").addEventListener("click", () => {
+  if (!state.context?.event) return;
+  const url=URL.createObjectURL(new Blob([JSON.stringify(state.context.event,null,2)],{type:"application/json"}));
+  const link=document.createElement("a");link.href=url;link.download="kuma-event.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+
+function renderResults(result) {
+  const root=$("#related-result"); root.hidden=false; root.replaceChildren();
+  for(const event of [...result.events].sort((a,b)=>globalThis.KumApeAdapter.eventTimestamp(a)-globalThis.KumApeAdapter.eventTimestamp(b))) {
+    const actions=addCard(root,globalThis.KumApeInvestigations.describeEvent(event),new Date(globalThis.KumApeAdapter.eventTimestamp(event)).toLocaleString("ru-RU"));
+    actions.append(button("JSON",()=>navigator.clipboard.writeText(JSON.stringify(event,null,2))),button("В расследование",async()=>{
+      let id=$("#investigation-select").value;
+      if(!id){const title=prompt("Название расследования","Новое расследование");if(title===null)return;id=(await globalThis.KumApeInvestigations.createInvestigation(title)).id;}
+      await globalThis.KumApeInvestigations.addEvent(id,event);await renderInvestigations();$("#investigation-select").value=id;setStatus("Событие добавлено");
+    }));
+  }
+  if(!result.events.length) root.textContent="События не найдены";
+}

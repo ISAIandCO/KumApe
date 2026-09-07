@@ -19,6 +19,7 @@
 
   function prepareEvent(event, mode = "strict") {
     if (!event || typeof event !== "object" || Array.isArray(event)) throw new TypeError("Для AI требуется структурированное событие");
+    if (Array.isArray(event.Events)) return { Events: event.Events.slice(0, 100).map(item => prepareEvent(item, mode)) };
     if (mode === "full") return structuredClone(event);
     if (mode === "redacted") return redact(event);
     return Object.fromEntries(Object.entries(event).filter(([key, value]) => STRICT_FIELDS.has(key) && value !== undefined && value !== null && value !== ""));

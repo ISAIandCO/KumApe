@@ -11,3 +11,11 @@ input[type="text"] { min-width: 280px; padding: 7px; } textarea { width: 100%; m
 article time { opacity: .65; } article details pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, CanvasText 7%, Canvas); padding: 9px; }
 .entities { margin-top: 5px; font-size: 12px; opacity: .65; overflow-wrap: anywhere; } .danger { border-color: #b94a48; } .empty { padding: 18px; opacity: .65; }
 @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); } }
+
+.entity-graph { position:relative; height:440px; border:1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius:8px; overflow:hidden; }
+.entity-graph canvas { width:100%; height:100%; touch-action:none; }
+.entity-tooltip { position:fixed; z-index:10; max-width:400px; padding:10px; white-space:pre-wrap; pointer-events:none; background:Canvas; color:CanvasText; border:1px solid #665cc7; border-radius:7px; }
+.entity-tooltip strong,.entity-tooltip span { display:block; }
+.toolbar details label {display:block;}
+
+#detail table {width:100%;border-collapse:collapse;} #detail th,#detail td {padding:7px;border:1px solid color-mix(in srgb,CanvasText 18%,transparent);text-align:left;overflow-wrap:anywhere;}

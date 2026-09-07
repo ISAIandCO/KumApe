@@ -21,10 +21,10 @@ test("graph links parent to child, isolates hosts and resolves PID reuse to clos
     event("child", "20", "10", "2026-09-07T10:01:00Z"), event("other", "10", "1", "2026-09-07T10:00:30Z", "other"),
   ];
   const graph = api().buildGraph(events, events[2], [mapping]);
-  assert.ok(graph.edges.some((edge) => edge.source === "event:new" && edge.target === "event:child"));
-  assert.ok(!graph.edges.some((edge) => edge.source === "event:old" && edge.target === "event:child"));
-  assert.ok(!graph.edges.some((edge) => edge.source === "event:other" && edge.target === "event:child"));
-  assert.equal(graph.sourceNodeId, "event:child");
+  assert.ok(graph.edges.some((edge) => edge.source === "event:pc:new" && edge.target === "event:pc:child"));
+  assert.ok(!graph.edges.some((edge) => edge.source === "event:pc:old" && edge.target === "event:pc:child"));
+  assert.ok(!graph.edges.some((edge) => edge.source === "event:other:other" && edge.target === "event:pc:child"));
+  assert.equal(graph.sourceNodeId, "event:pc:child");
 });
 
 test("GUID relationship takes precedence over a reused PID", () => {
@@ -39,4 +39,29 @@ test("legacy Sysmon profile migrates by DeviceEventClassID rather than category"
   const migrated = api().mappingsFromLegacyProfiles([{ name: "Sysmon", when: { DeviceEventCategory: ["Sysmon"], DeviceEventClassID: ["1"] }, processGraph: { host: ["HostX"], pid: ["PidX"], parentPid: ["ParentX"] } }]);
   assert.equal(migrated[0].eventIdField, "DeviceEventClassID");
   assert.equal(migrated[0].eventIdValue, "1");
+});
+
+test("4688 chooses a coherent PID pair, normalizes hex, and preserves custom mappings", () => {
+  const model=api(); const defaults=model.BUILTIN_PROCESS_MAPPINGS;
+  const e={DeviceEventClassID:'4688',DeviceHostName:'pc',DeviceCustomString5:'0x14',DeviceCustomString3:'0x0a',DestinationProcessID:'999',SourceProcessID:'888'};
+  assert.equal(model.processFields(e,model.mappingForEvent(e)).pid,'20');
+  assert.equal(model.processFields(e,model.mappingForEvent(e)).parentPid,'10');
+  delete e.DeviceCustomString5;
+  assert.equal(model.processFields(e,model.mappingForEvent(e)).pid,'999');
+  assert.equal(model.processFields(e,model.mappingForEvent(e)).parentPid,'888');
+  const custom={...defaults[0],pid:'MyPid',parentPid:'MyParent',fallbackPid:'',fallbackParentPid:''};
+  assert.equal(model.processFields({...e,MyPid:'42',MyParent:'1'},custom).pid,'42');
+});
+
+test("step graph excludes unrelated candidates, other hosts, and later PID reuse", () => {
+  const model=api();
+  const child=event('child','20','10','2026-09-07T10:01:00Z');
+  const parent=event('parent','10','1','2026-09-07T10:00:00Z');
+  const unrelated=event('unrelated','99','1','2026-09-07T10:00:00Z');
+  const later=event('later','10','1','2026-09-07T10:02:00Z');
+  const graph=model.buildGraph([child,parent,unrelated,later],child,[mapping]);
+  const step=model.connectedGraph(graph,graph.sourceNodeId,'parents');
+  assert.deepEqual([...step.nodes.map(n=>n.pid)].sort(),['10','20']);
+  const action=model.relatedAction(child,[mapping],'parents');
+  assert.match(action.where,/HostX = 'pc'/);assert.match(action.where,/PidX = '10'/);assert.doesNotMatch(action.where,/ParentX = '20'/);
 });

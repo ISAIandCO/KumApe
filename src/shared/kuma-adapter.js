@@ -374,10 +374,10 @@
     return predicates.length === 1 ? predicates[0] : `(${predicates.join(" OR ")})`;
   }
 
-  function buildEventsQuery(where, limit = DEFAULT_LIMIT) {
+  function buildEventsQuery(where, limit = DEFAULT_LIMIT, maxLimit = MAX_LIMIT) {
     const predicate = String(where ?? "").trim();
     if (!predicate || predicate.length > 4000 || /[;\0]/.test(predicate)) throw new TypeError("Недопустимое условие поиска");
-    const safeLimit = Math.max(1, Math.min(MAX_LIMIT, Number(limit) || DEFAULT_LIMIT));
+    const safeLimit = Math.max(1, Math.floor(Math.min(10000, Number(maxLimit) || MAX_LIMIT, Number(limit) || DEFAULT_LIMIT)));
     return `SELECT * FROM \`events\` WHERE ${predicate} ORDER BY Timestamp DESC LIMIT ${safeLimit}`;
   }
 
@@ -544,7 +544,7 @@
       });
     }
 
-    async searchRelated(action, event, rangeSeconds = DEFAULT_RANGE_SECONDS, limit = DEFAULT_LIMIT) {
+    async searchRelated(action, event, rangeSeconds = DEFAULT_RANGE_SECONDS, limit = DEFAULT_LIMIT, maxLimit = MAX_LIMIT) {
       let clusterId = this.clusterId;
       if (!clusterId) {
         const clusters = await this.getClusters();
@@ -557,7 +557,7 @@
         period: eventPeriod(event, rangeSeconds),
         emptyFields: true,
         rawTimestamps: true,
-        sql: buildEventsQuery(action.where, limit),
+        sql: buildEventsQuery(action.where, limit, maxLimit),
       };
       const response = await this.request({
         origin: this.apiOrigin,

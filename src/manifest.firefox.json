@@ -34,6 +34,7 @@
     "scripts": [
       "shared/kuma-adapter.js",
       "shared/process-model.js",
+      "shared/graph-store.js",
       "shared/useful-filters.js",
       "shared/ai-privacy.js",
       "shared/ioc-providers.js",
