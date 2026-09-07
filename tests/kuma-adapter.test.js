@@ -150,7 +150,7 @@ test("requires a token before testing the public REST identity", async () => {
     uiOrigin: "https://kuma.example.local:7220",
     apiOrigin: "https://kuma.example.local:7223",
   }, async () => assert.fail("request must not run without a token"));
-  assert.throws(() => adapter.getApiCurrentUser(), /API-токен не загружен/);
+  assert.throws(() => adapter.getApiCurrentUser(), /API-токен не сохранён/);
 });
 
 test("loads every documented cluster page and removes duplicate IDs", async () => {

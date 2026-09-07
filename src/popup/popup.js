@@ -27,7 +27,7 @@ function defaultApiOrigin(uiOrigin) {
 }
 
 async function requestOrigins(origins) {
-  const patterns = [...new Set(origins.map((origin) => `${origin}/*`))];
+  const patterns = [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))];
   return browser.permissions.request({ origins: patterns });
 }
 

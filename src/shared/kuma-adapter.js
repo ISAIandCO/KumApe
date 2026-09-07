@@ -487,6 +487,7 @@
     return [
       { provider: "Kaspersky OpenTIP", url: `https://opentip.kaspersky.com/${value}/` },
       { provider: "VirusTotal", url: `https://www.virustotal.com/gui/search/${value}` },
+      ...(ioc.type === "ip" ? [{ provider: "AbuseIPDB", url: `https://www.abuseipdb.com/check/${value}` }] : []),
     ];
   }
 
@@ -504,7 +505,7 @@
     }
 
     getApiCurrentUser() {
-      if (!this.token) throw new Error("API-токен не загружен в текущую сессию Firefox");
+      if (!this.token) throw new Error("API-токен не сохранён в настройках KumApe");
       return this.request({
         origin: this.apiOrigin,
         path: "/api/v3/users/whoami",
