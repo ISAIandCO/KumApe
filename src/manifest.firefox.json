@@ -33,7 +33,10 @@
   "background": {
     "scripts": [
       "shared/kuma-adapter.js",
-      "background/background.js"
+      "shared/ioc-providers.js",
+      "background/ioc-lookup.js",
+      "background/background.js",
+      "background/content-registration.js"
     ]
   },
   "options_ui": {
@@ -51,6 +54,10 @@
       "data_collection_permissions": {
         "required": [
           "none"
+        ],
+        "optional": [
+          "websiteContent",
+          "authenticationInfo"
         ]
       }
     }

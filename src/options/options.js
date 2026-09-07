@@ -27,7 +27,12 @@ async function load() {
   $("#api-origin").value = config.apiOrigin || "";
   $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
   renderClusters([], config.clusterId || "");
-  $("#api-token").placeholder = config.tokenPresent ? "Токен уже загружен в текущей сессии" : "Не сохранён в этой сессии Firefox";
+  if (config.clusterId) {
+    $("#cluster-id").add(new Option(config.clusterId, config.clusterId));
+    $("#cluster-id").value = config.clusterId;
+  }
+  await renderIocSettings();
+  $("#api-token").placeholder = config.tokenPresent ? "Токен сохранён" : "Не сохранён";
 }
 
 async function save() {
@@ -40,15 +45,15 @@ async function save() {
     throw new Error(`Профили полей: некорректный JSON (${error.message})`);
   }
   const fieldProfiles = api.normalizeFieldProfiles(parsedProfiles);
-  const granted = await browser.permissions.request({ origins: [...new Set([`${uiOrigin}/*`, `${apiOrigin}/*`])] });
+  const granted = await browser.permissions.request({ origins: [...new Set([uiOrigin, apiOrigin].map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
   await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles });
   $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
   const token = $("#api-token").value.trim();
   if (token) {
-    await browser.storage.session.set({ apiToken: token });
+    await browser.storage.local.set({ apiToken: token });
     $("#api-token").value = "";
-    $("#api-token").placeholder = "Токен уже загружен в текущей сессии";
+    $("#api-token").placeholder = "Токен сохранён";
   }
   show("Настройки сохранены.");
 }
@@ -59,9 +64,10 @@ $("#settings").addEventListener("submit", (event) => {
 });
 $("#clear-token").addEventListener("click", async () => {
   await browser.storage.session.remove("apiToken");
+  await browser.storage.local.remove("apiToken");
   $("#api-token").value = "";
-  $("#api-token").placeholder = "Не сохранён в этой сессии Firefox";
-  show("API-токен удалён из сессии Firefox.");
+  $("#api-token").placeholder = "Не сохранён";
+  show("API-токен удалён.");
 });
 $("#test-session").addEventListener("click", async () => {
   try { show((await send({ type: "session:test" })).user); } catch (error) { show(error.message, true); }
@@ -105,3 +111,49 @@ $("#ui-origin").addEventListener("change", () => {
 });
 
 load().catch((error) => show(error.message, true));
+
+async function renderIocSettings() {
+  const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
+  const container = $("#ioc-providers");
+  container.replaceChildren();
+  for (const [id, provider] of Object.entries(globalThis.KumApeIoc.PROVIDERS)) {
+    const label = document.createElement("label");
+    label.textContent = `${provider.name}: API-ключ`;
+    const input = document.createElement("input");
+    input.type = "password";
+    input.autocomplete = "off";
+    input.placeholder = iocApiKeys[id] ? "Ключ сохранён" : "Не сохранён";
+    label.append(input);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    for (const [text, action] of [
+      ["Сохранить и выдать доступ", async () => {
+        if (!await browser.permissions.request({ origins: [`${provider.origin}/*`], data_collection: ["websiteContent", "authenticationInfo"] })) throw new Error("Firefox не выдал доступ");
+        const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
+        if (input.value.trim()) iocApiKeys[id] = input.value.trim();
+        if (!iocApiKeys[id]) throw new Error("Введите API-ключ");
+        await browser.storage.local.set({ iocApiKeys });
+        input.value = ""; input.placeholder = "Ключ сохранён";
+        return `${provider.name}: ключ сохранён`;
+      }],
+      ["Удалить ключ", async () => {
+        const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
+        delete iocApiKeys[id];
+        await browser.storage.local.set({ iocApiKeys });
+        input.value = ""; input.placeholder = "Не сохранён";
+        return `${provider.name}: ключ удалён`;
+      }],
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button"; button.textContent = text;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try { $("#ioc-status").textContent = await action(); }
+        catch (error) { $("#ioc-status").textContent = error.message; }
+        finally { button.disabled = false; }
+      });
+      actions.append(button);
+    }
+    container.append(label, actions);
+  }
+}
