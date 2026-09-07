@@ -18,3 +18,8 @@ test("redacted AI mode recursively masks secret fields and inline tokens", () =>
   assert.equal(result.Extra.password, "[REDACTED]");
   assert.equal(result.Extra.note, "token=[REDACTED]");
 });
+
+test("investigation AI sanitizes every event in strict mode", () => {
+ const prepared=api().prepareEvent({Events:[{DeviceHostName:'pc',Raw:'secret',ApiToken:'secret'}]},'strict');
+ assert.equal(prepared.Events[0].DeviceHostName,'pc');assert.equal(JSON.stringify(prepared).includes('secret'),false);
+});

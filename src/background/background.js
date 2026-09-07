@@ -10,6 +10,9 @@ const DEFAULT_CONFIG = Object.freeze({
   processMappings: processApi.BUILTIN_PROCESS_MAPPINGS,
   ai: { enabled: false, endpoint: "http://127.0.0.1:8080/v1", model: "local-model", privacyMode: "strict" },
 });
+const processGraphs = new Map();
+const processGraphTabs = new Map();
+const processOperations = new Map();
 const REQUEST_TTL_MS = 5 * 60_000;
 const ALLOWED_REQUESTS = Object.freeze([
   { method: "GET", base: "ui", pattern: /^\/api\/whoami$/ },
@@ -34,6 +37,12 @@ const keyMigration = (async () => {
     const legacy = processApi.mappingsFromLegacyProfiles(local.fieldProfiles);
     moved.processMappings = legacy.length ? legacy : processApi.BUILTIN_PROCESS_MAPPINGS;
     if (legacy.length) moved.fieldProfiles = local.fieldProfiles.map(({ processGraph, ...profile }) => profile);
+  }
+  if (local.processMappings) {
+    moved.processMappings = local.processMappings.map(mapping =>
+      mapping.eventIdValue === "4688" && mapping.pid === "DestinationProcessID" && mapping.parentPid === "SourceProcessID" && !mapping.fallbackPid
+        ? { ...mapping, pid: "DeviceCustomString5", parentPid: "DeviceCustomString3", fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID" }
+        : mapping);
   }
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
   await browser.storage.session.remove(["apiToken", "iocApiKeys"]);
@@ -171,8 +180,55 @@ async function openProcessGraph(message) {
     limit: Math.max(1, Math.min(1000, Number(message.limit) || 1000)),
     expiresAt: Date.now() + REQUEST_TTL_MS,
   } });
-  await browser.tabs.create({ url: browser.runtime.getURL(`process-graph/graph.html?id=${encodeURIComponent(id)}`) });
+  const graphTab = await browser.tabs.create({ url: browser.runtime.getURL(`process-graph/graph.html?id=${encodeURIComponent(id)}&layout=${["force", "timeline", "step"].includes(message.layout) ? message.layout : "force"}`) });
+  if (graphTab?.id) processGraphTabs.set(graphTab.id, id);
   return { id };
+}
+
+async function runProcessGraph(message) {
+  const previous = processGraphs.get(message.id) || await globalThis.KumApeGraphStore?.get(message.id);
+  const request = previous?.request || await storedRequest("processRequest", message.id);
+  const config = await loadConfig();
+  if (previous && previous.result.origin !== config.uiOrigin) throw new Error("Адрес KUMA изменён. Откройте новый граф.");
+  const operation = requestId(); processOperations.set(message.id, operation);
+  const expanding = message.type === "process:expand";
+  const mode = expanding ? previous?.result.queryMetadata.mode : message.mode === "step" ? "step" : "broad";
+  if (expanding && !previous) throw new Error("Сначала загрузите граф");
+  const selected = expanding ? previous.result.graph.nodes.find(n => n.id === message.nodeId) : null;
+  if (expanding && !selected) throw new Error("Узел отсутствует на текущем графе");
+  const queryLimit = message.nodeLimit === 10000 ? 10000 : request.limit;
+  const anchor = selected?.event || request.event;
+  let range = expanding ? Math.max(60, Math.min(86400, Number(message.rangeSeconds) || 900)) : request.rangeSeconds;
+  let searchEvent = anchor;
+  const direction = message.direction || "both";
+  const interval = expanding && ["previous", "next"].includes(direction);
+  if (interval) {
+    const period = previous.result.period;
+    const edge = Date.parse(direction === "previous" ? period.from : period.to);
+    searchEvent = { ...anchor, Timestamp: new Date(edge + (direction === "previous" ? -1 : 1) * range * 1000).toISOString() };
+  }
+  const action = !interval && (expanding || mode === "step")
+    ? processApi.relatedAction(anchor, config.processMappings, direction)
+    : processApi.graphSearchAction(anchor, config.processMappings);
+  try {
+    const fetched = await (await adapter()).searchRelated(action, searchEvent, range, queryLimit, 10000);
+    if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
+    let candidate = processApi.buildGraph(fetched.events, anchor, config.processMappings);
+    if (!interval && (mode === "step" || expanding) && direction !== "siblings") candidate = processApi.connectedGraph(candidate, candidate.sourceNodeId, direction);
+    const events = [...(expanding ? previous.result.graph.nodes.map(n => n.event) : []), ...candidate.nodes.map(n => n.event)];
+    const graph = processApi.buildGraph(events, request.event, config.processMappings);
+    const period = expanding ? {
+      from: new Date(Math.min(Date.parse(previous.result.period.from), Date.parse(fetched.period.from))).toISOString(),
+      to: new Date(Math.max(Date.parse(previous.result.period.to), Date.parse(fetched.period.to))).toISOString(),
+    } : fetched.period;
+    graph.truncated = fetched.events.length >= queryLimit;
+    const result = { graph, sourceNodeId: graph.sourceNodeId, sourceEvent: request.event, origin: config.uiOrigin, query: fetched.query, period,
+      queryMetadata: { mode, partial: true, timeFrom: period.from, timeTo: period.to, limitReached: graph.truncated, maxNodes: queryLimit } };
+    const snapshot = { request: { ...request, limit: queryLimit }, result };
+    await globalThis.KumApeGraphStore?.set(message.id, snapshot);
+    processGraphs.set(message.id, snapshot);
+    return result;
+  } finally { if (processOperations.get(message.id) === operation) processOperations.delete(message.id); }
 }
 
 async function storedRequest(prefix, id) {
@@ -247,6 +303,14 @@ if (browser.tabs.onUpdated?.addListener) {
     } catch { /* The in-page fallback is unavailable if KUMA blocks injection. */ }
   });
 }
+
+browser.tabs.onRemoved?.addListener(async tabId => {
+  const id = processGraphTabs.get(tabId);
+  if (!id) return;
+  processGraphTabs.delete(tabId); processGraphs.delete(id); processOperations.delete(id);
+  await browser.storage.session.remove(`processRequest:${id}`);
+  await globalThis.KumApeGraphStore?.remove(id);
+});
 
 browser.runtime.onMessage.addListener(async (message, sender) => {
   try {
@@ -323,13 +387,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         return { ok: true, result: await openKumaSearchTab(message, await safeFilter(message)) };
       case "process:open-graph":
         return { ok: true, result: await openProcessGraph(message) };
-      case "process:request:run": {
-        const request = await storedRequest("processRequest", message.id);
-        const config = await loadConfig();
-        const action = processApi.graphSearchAction(request.event, config.processMappings);
-        const result = await (await adapter()).searchRelated(action, request.event, request.rangeSeconds, request.limit);
-        return { ok: true, result: { query: result.query, period: result.period, graph: processApi.buildGraph(result.events, request.event, config.processMappings) } };
-      }
+      case "process:request:run":
+      case "process:expand":
+        return { ok: true, result: await runProcessGraph(message) };
+      case "process:cancel":
+        processOperations.delete(message.id);
+        return { ok: true };
       case "process:event:open": {
         const config = await loadConfig();
         const mapping = processApi.mappingForEvent(message.event, config.processMappings);
@@ -355,10 +418,33 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const config = await loadConfig();
         if (!config.ai?.enabled) throw new Error("Включите локальный AI в настройках KumApe");
         aiEndpoint(config);
-        const preview = globalThis.KumApeAiPrivacy.preview(message.event, config.ai.privacyMode || "strict");
-        const id = requestId();
-        await browser.storage.session.set({ [`aiRequest:${id}`]: { payload: preview.payload, fields: preview.fields, bytes: preview.bytes, mode: preview.mode, expiresAt: Date.now() + 30 * 60_000 } });
-        await browser.tabs.create({ url: browser.runtime.getURL(`ai/assistant.html?id=${encodeURIComponent(id)}`) });
+        const sessionKey = Number.isInteger(message.sourceTabId) ? `aiSession:${config.uiOrigin}:${message.sourceTabId}` : null;
+        let existing = null;
+        if (sessionKey) {
+          const sourceTab = await browser.tabs.get(message.sourceTabId);
+          if (new URL(sourceTab.url).origin !== config.uiOrigin) throw new Error("Исходная вкладка не принадлежит настроенной KUMA");
+          existing = (await browser.storage.session.get(sessionKey))[sessionKey];
+        }
+        let old = null;
+        if (existing) { try { old = await storedRequest("aiRequest", existing.id); } catch { existing = null; } }
+        const previous = old ? (old.payload.Events || [old.payload]) : [];
+        const current = Array.isArray(message.event?.Events) ? message.event.Events : [message.event];
+        const combined = [...previous, ...current].map(event => globalThis.KumApeAiPrivacy.prepareEvent(event, config.ai.privacyMode || "strict"));
+        const unique = [...new Map(combined.map(event => [JSON.stringify(event),event])).values()].slice(-100);
+        const preview = globalThis.KumApeAiPrivacy.preview(unique.length === 1 ? unique[0] : {Events:unique}, config.ai.privacyMode || "strict");
+        if (preview.bytes > 200000) throw new Error("Контекст AI превышает 200 КБ; выберите более строгий режим");
+        const id = existing?.id || requestId();
+        await browser.storage.session.set({ [`aiRequest:${id}`]: { payload: preview.payload, fields: preview.fields, bytes: preview.bytes, mode: preview.mode, expiresAt: Date.now() + 24 * 60 * 60_000 } });
+        if (existing?.tabId) {
+          try {
+            const tab = await browser.tabs.get(existing.tabId);
+            if (tab.url === browser.runtime.getURL(`ai/assistant.html?id=${encodeURIComponent(id)}`)) {
+              await browser.tabs.update(tab.id,{active:true}); return {ok:true};
+            }
+          } catch { /* Reopen a closed chat using its prepared context. */ }
+        }
+        const tab = await browser.tabs.create({ url: browser.runtime.getURL(`ai/assistant.html?id=${encodeURIComponent(id)}`) });
+        if (sessionKey) await browser.storage.session.set({[sessionKey]:{id,tabId:tab.id}});
         return { ok: true };
       }
       case "ai:request:get": {

@@ -21,10 +21,12 @@
 
   <nav id="tabs" aria-label="Инструменты" hidden>
     <button class="active" data-panel="event">Событие</button>
+    <button data-panel="process">Процессы</button>
     <button data-panel="related">Связанные</button>
     <button data-panel="filters">Фильтры</button>
     <button data-panel="ioc">IOC</button>
     <button data-panel="rule">Правило</button>
+    <button data-panel="ai">AI</button>
   </nav>
 
   <main id="main" hidden>
@@ -33,14 +35,17 @@
       <pre id="event-json">Откройте карточку события или вкладку Raw в KUMA.</pre>
       <div class="actions">
         <button id="copy-json" disabled>Копировать</button>
+        <button id="download-json">Скачать JSON</button>
         <button id="copy-link">Копировать ссылку</button>
         <button id="refresh">Обновить</button>
-        <button id="open-ai">Локальный AI</button>
+
       </div>
       <div class="investigation-actions"><select id="investigation-select" aria-label="Расследование"><option value="">Новое расследование…</option></select><button id="add-investigation" disabled>Добавить в расследование</button><button id="open-workspace">Открыть расследования</button></div>
       <p class="hint">KumApe читает атрибуты полей открытой карточки. Область «Исходное событие» используется для получения Raw-текста.</p>
     </section>
 
+    <section id="process" class="panel"><h2>Контекст процесса</h2><p class="hint">Граф продолжает работать после закрытия popup. ПКМ закрепляет карточку процесса; в пошаговом режиме из неё можно искать родителя и дочерние процессы.</p><div class="actions"><button data-graph="force">Граф связей</button><button data-graph="timeline">По времени</button><button data-graph="step">Пошаговый</button></div></section>
+    <section id="ai" class="panel"><h2>SEC AI Assistant</h2><p class="hint">Чат с локальной моделью. Перед отправкой доступны состав контекста и режим приватности. Диалог сохраняется в отдельной вкладке.</p><button id="open-ai">Открыть чат с текущим событием</button></section>
     <section id="filters" class="panel">
       <div class="section-title"><h2>Полезные фильтры</h2><span class="hint">SQL строится из контекста события</span></div>
       <div id="filter-list" class="card-list"></div>
@@ -49,7 +54,7 @@
     <section id="related" class="panel">
       <div class="section-title"><h2>Связанные события</h2><label>Диапазон <select id="range"><option value="300">±5 мин</option><option value="900" selected>±15 мин</option><option value="3600">±1 ч</option><option value="86400">±24 ч</option></select></label></div>
       <div id="related-actions" class="card-list"></div>
-      <pre id="related-result" hidden></pre>
+      <div id="related-result" class="card-list" hidden></div>
     </section>
 
     <section id="ioc" class="panel">

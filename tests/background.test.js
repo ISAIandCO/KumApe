@@ -24,7 +24,7 @@ function background(local = {}, session = {}, fetchImpl = () => { throw new Erro
       storage: { local: storage(local), session: storage(session) },
       permissions: { contains: async () => granted },
       runtime: { getURL: (path) => `moz-extension://test/${path}`, onMessage: { addListener: (fn) => { handler = fn; } }, openOptionsPage: async () => {} },
-      tabs: { create: async (options) => { createdTabs.push(options); return { id: createdTabs.length, ...options }; } },
+      tabs: { create: async (options) => { createdTabs.push(options); return { id: createdTabs.length, ...options }; }, get: async id => id === 99 ? {id,url:"https://kuma.test/events"} : {id,...createdTabs[id-1]}, update: async (id,options) => ({id,...options}) },
     },
   });
   for (const file of files) vm.runInContext(file, context);
@@ -203,4 +203,30 @@ test("provider 404 is unknown, 429 is a rate limit, and malformed reports are er
     const result = await app.message({ type: "ioc:lookup", provider: "virustotal", ioc: { type: "ip", value: "8.8.8.8" } });
     assert.match(result.error || result.result.summary, expected);
   }
+});
+
+test("step mode queries selected relations, merges expansions and rejects foreign node IDs", async () => {
+ const event=(id,pid,parent,time)=>({ID:id,DeviceEventClassID:'4688',DeviceHostName:'pc',DeviceCustomString5:pid,DeviceCustomString3:parent,Timestamp:`2026-09-07T10:${time}:00Z`});
+ const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');
+ let calls=0;
+ const app=background({uiOrigin:'https://kuma.test',apiOrigin:'https://kuma.test:7223',clusterId:'c',apiToken:'synthetic'}, {}, async(url,options)=>{
+   const query=JSON.parse(options.body).sql; assert.match(query,/DeviceHostName = 'pc'/);
+   calls++; return Response.json({events:calls===1?[source,parent,foreign]:[child,foreign]});
+ });
+ const opened=await app.message({type:'process:open-graph',event:source});const id=opened.result.id;
+ const first=await app.message({type:'process:request:run',id,mode:'step'});assert.equal(first.ok,true,first.error);
+ assert.deepEqual([...first.result.graph.nodes.map(n=>n.pid)].sort(),['10','20']);
+ const sourceId=first.result.graph.sourceNodeId;
+ const expanded=await app.message({type:'process:expand',id,nodeId:sourceId,direction:'children'});assert.equal(expanded.ok,true,expanded.error);
+ assert.deepEqual([...expanded.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
+ const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,2);
+});
+
+test('AI reuses a chat for a source tab and sanitizes appended events',async()=>{
+ const session={};const app=background({uiOrigin:'https://kuma.test',ai:{enabled:true,endpoint:'http://127.0.0.1:8080/v1',privacyMode:'strict'}},session);
+ assert.equal((await app.message({type:'ai:open',sourceTabId:99,event:{DeviceHostName:'first',Raw:'SECRET'}})).ok,true);
+ assert.equal((await app.message({type:'ai:open',sourceTabId:99,event:{DeviceHostName:'second',Raw:'SECRET'}})).ok,true);
+ assert.equal(app.createdTabs.length,1);
+ const payload=Object.entries(session).find(([key])=>key.startsWith('aiRequest:'))[1].payload;
+ assert.equal(payload.Events.length,2);assert.equal(JSON.stringify(payload).includes('SECRET'),false);
 });

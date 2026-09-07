@@ -1,7 +1,11 @@
+import { compareEvents } from "../shared/event-compare.js";
+import { InvestigationCanvas } from "./investigation-canvas.js";
+import { createEntityGraph } from "./entity-model.js";
 "use strict";
 
 const db = globalThis.KumApeInvestigations;
 const $ = (selector) => document.querySelector(selector);
+let graphView = null;
 let currentId = new URL(location.href).searchParams.get("id");
 
 function status(text) { $("#status").textContent = text; }
@@ -24,6 +28,7 @@ async function renderList() {
 }
 
 async function renderDetail() {
+  if (graphView) { graphView.resizeObserver.disconnect(); graphView.alpha = 0; graphView = null; }
   const root = $("#detail"); root.replaceChildren();
   if (!currentId) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "Выберите или создайте расследование."; root.append(p); return; }
   const [investigation, items] = await Promise.all([db.getInvestigation(currentId), db.listItems(currentId)]);
@@ -38,10 +43,63 @@ async function renderDetail() {
   const tools = document.createElement("div"); tools.className = "toolbar";
   const json = document.createElement("button"); json.textContent = "Экспорт JSON"; json.addEventListener("click", () => download(`${investigation.title}.json`, "application/json", `${JSON.stringify({ investigation, items }, null, 2)}\n`));
   const markdown = document.createElement("button"); markdown.textContent = "Экспорт Markdown"; markdown.addEventListener("click", () => download(`${investigation.title}.md`, "text/markdown", db.toMarkdown(investigation, items)));
-  tools.append(json, markdown); root.append(tools);
+  const ai = document.createElement("button"); ai.textContent = "Обсудить с локальным AI"; ai.disabled = !items.length;
+  ai.addEventListener("click", async () => {
+    const response = await browser.runtime.sendMessage({type:"ai:open", event:{ Investigation: investigation.title, Events:items.map(item=>item.payload) }});
+    if (!response?.ok) status(response?.error || "Не удалось открыть AI");
+  });
+  tools.append(json, markdown, ai); root.append(tools);
+  const graphTitle = document.createElement("h2"); graphTitle.textContent = "Граф связей";
+  const graphTools = document.createElement("div"); graphTools.className = "toolbar";
+  const fit = document.createElement("button"); fit.textContent = "Вписать";
+  let selectedEntity = null;
+  const searchKuma = document.createElement("button"); searchKuma.textContent = "Найти связанные события в KUMA"; searchKuma.disabled = true;
+  searchKuma.addEventListener("click", async () => {
+    try {
+      const entity = selectedEntity; if (!entity) return;
+      const item = items.find(item => item.entityKeys.includes(`${entity.entityType}:${entity.label}`));
+      const response = await browser.runtime.sendMessage({type:"related:actions",event:item.payload});
+      if (!response?.ok) throw new Error(response?.error || "Не удалось сформировать поиск");
+      const action = response.actions.find(action => action.kind===entity.entityType && action.value.toLowerCase()===entity.label.toLowerCase());
+      if (!action) throw new Error("Для сущности не настроены поля related search");
+      const result = await browser.runtime.sendMessage({type:"related:search",event:item.payload,action,rangeSeconds:3600,limit:250});
+      if (!result?.ok) throw new Error(result?.error || "Не удалось найти события");
+      for (const event of result.result.events) await db.addEvent(currentId,event);
+      await render(); status(`Добавлено из поиска: ${result.result.events.length} событий`);
+    } catch(error) {status(error.message);}
+  });
+  const search = document.createElement("input"); search.placeholder = "Фильтр событий: текст"; search.type = "search";
+  const force = document.createElement("details"); const summary = document.createElement("summary"); summary.textContent = "Силы графа"; force.append(summary);
+  const wrapper = document.createElement("div"); wrapper.className = "entity-graph";
+  const canvas = document.createElement("canvas"); canvas.setAttribute("aria-label", "Граф событий и сущностей");
+  const tooltip = document.createElement("div"); tooltip.className = "entity-tooltip"; tooltip.hidden = true;
+  wrapper.append(canvas, tooltip); graphTools.append(fit, search, searchKuma, force); root.append(graphTitle, graphTools, wrapper);
+  graphView = new InvestigationCanvas(canvas, tooltip, {
+    onEventOpen: node => document.getElementById(`item-${node.itemId}`)?.scrollIntoView({block:"center",behavior:"smooth"}),
+    onSelectionChange: nodes => { selectedEntity = nodes.at(-1) || null; searchKuma.disabled = !selectedEntity; },
+  });
+  function renderGraph() { const words = search.value.toLowerCase().split(/\s+/).filter(Boolean); graphView.setGraph(createEntityGraph(items.filter(item => words.every(word => JSON.stringify(item.payload).toLowerCase().includes(word))))); }
+  for (const [key,label,min,max,step] of [["attraction","Притяжение",0,1,.05],["repulsion","Отталкивание",0,30,.25],["linkStrength","Сила связи",0,2,.05],["linkDistance","Расстояние",40,500,1]]) {
+    const row=document.createElement("label");row.textContent=label;
+    const slider=document.createElement("input");slider.type="range";slider.min=min;slider.max=max;slider.step=step;slider.value=graphView.forceSettings[key];
+    slider.addEventListener("input",()=>{graphView.updateForceSetting(key, Number(slider.value));graphView.persistForceSettings();});row.append(slider);force.append(row);
+  }
+  fit.addEventListener("click",()=>graphView.fit()); search.addEventListener("input",renderGraph); renderGraph();
+  const comparePanel = document.createElement("details"); const compareTitle = document.createElement("summary"); compareTitle.textContent = "Сравнить события";
+  const first = document.createElement("select"), second = document.createElement("select"), compareButton = document.createElement("button"), compareResult = document.createElement("div");
+  first.setAttribute("aria-label","Первое событие"); second.setAttribute("aria-label","Второе событие");
+  for(const item of items) {first.add(new Option(`${item.timestamp} — ${item.label}`,item.id));second.add(new Option(`${item.timestamp} — ${item.label}`,item.id));}
+  if(items.length>1) second.selectedIndex=1; compareButton.textContent="Показать различия";compareButton.disabled=items.length<2;
+  compareButton.addEventListener("click",()=>{
+    compareResult.replaceChildren(); const diff=compareEvents([items.find(i=>i.id===first.value).payload,items.find(i=>i.id===second.value).payload]);
+    const table=document.createElement("table"); const head=document.createElement("tr");for(const value of ["Поле","Первое событие","Второе событие"]){const th=document.createElement("th");th.textContent=value;head.append(th);}table.append(head);
+    for(const row of diff.rows.filter(r=>r.status!=="same")){const tr=document.createElement("tr");for(const value of [row.field,...row.values]){const td=document.createElement("td");td.textContent=value===undefined?"—":typeof value==="object"?JSON.stringify(value):String(value);tr.append(td);}table.append(tr);}
+    compareResult.append(table);
+  });
+  comparePanel.append(compareTitle,first,second,compareButton,compareResult);root.append(comparePanel);
   const h2 = document.createElement("h2"); h2.textContent = `События (${items.length})`; root.append(h2);
   const timeline = document.createElement("div"); timeline.className = "timeline";
-  for (const item of items) { const card = document.createElement("article"); const h3 = document.createElement("h3"); h3.textContent = item.label; const time = document.createElement("time"); time.textContent = item.timestamp; const entities = document.createElement("p"); entities.className = "entities"; entities.textContent = item.entityKeys.join(" · "); const details = document.createElement("details"); const summary = document.createElement("summary"); summary.textContent = "JSON события"; const pre = document.createElement("pre"); pre.textContent = JSON.stringify(item.payload, null, 2); details.append(summary, pre); card.append(h3, time, entities, details); timeline.append(card); }
+  for (const item of items) { const card = document.createElement("article"); card.id = `item-${item.id}`; const h3 = document.createElement("h3"); h3.textContent = item.label; const time = document.createElement("time"); time.textContent = item.timestamp; const entities = document.createElement("p"); entities.className = "entities"; entities.textContent = item.entityKeys.join(" · "); const details = document.createElement("details"); const summary = document.createElement("summary"); summary.textContent = "JSON события"; const pre = document.createElement("pre"); pre.textContent = JSON.stringify(item.payload, null, 2); details.append(summary, pre); card.append(h3, time, entities, details); timeline.append(card); }
   if (!items.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "Добавьте событие из popup KumApe."; timeline.append(p); }
   root.append(timeline);
 }

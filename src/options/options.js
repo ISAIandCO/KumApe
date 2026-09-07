@@ -6,6 +6,7 @@ const processApi = globalThis.KumApeProcess;
 const PROCESS_FIELDS = [
   ["eventIdField", "Поле Event ID", true], ["eventIdValue", "Значение Event ID", true],
   ["host", "Узел / host", true], ["pid", "PID процесса", true], ["parentPid", "PID родителя", true],
+  ["fallbackPid", "Резервное поле PID", false], ["fallbackParentPid", "Резервное поле PID родителя", false],
   ["processGuid", "GUID процесса", false], ["parentGuid", "GUID родителя", false],
   ["image", "Образ / путь", false], ["commandLine", "Командная строка", false],
   ["user", "Пользователь", false], ["eventRecordId", "ID события KUMA", false],
@@ -22,7 +23,7 @@ function mappingCard(mapping = {}) {
   for (const [key, title, required] of PROCESS_FIELDS) {
     const label = document.createElement("label"); label.textContent = title;
     const input = document.createElement("input"); input.dataset.key = key; input.value = mapping[key] || ""; input.required = required;
-    input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", pid: "DeviceCustomString3", parentPid: "DeviceCustomString5" }[key] || "Необязательно");
+    input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3" }[key] || "Необязательно");
     label.append(input); grid.append(label);
   }
   card.append(head, grid); return card;

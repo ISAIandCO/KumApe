@@ -11,3 +11,11 @@ The inline IOC menu and provider request patterns are adapted from ApePatrol
 Kaspersky, KUMA and Kaspersky OpenTIP are trademarks of their respective owners.
 KumApe is an independent open-source project and is not affiliated with or
 endorsed by AO Kaspersky Lab.
+
+KumApe includes source adapted from ISAIandCO/ApePatrol (Apache License 2.0):
+https://github.com/ISAIandCO/ApePatrol
+
+Process graph renderer, force-layout, spatial-index, filters, process-graph styles;
+investigation canvas; Markdown renderer; event comparison. KUMA transport and display adapters are
+modified for KumApe. See LICENSE for Apache License 2.0.
+No third-party libraries or artwork from ApePatrol's libs are included here.
