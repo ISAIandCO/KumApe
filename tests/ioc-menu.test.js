@@ -11,13 +11,19 @@ function fixture(origin = "https://kuma.test:7220") {
   const elements = [];
   class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.style = {}; this.listeners = {}; this.isConnected = true; this.offsetWidth = 330; this.offsetHeight = 400; elements.push(this); }
-    append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
+    append(...nodes) { for (const node of nodes) { node.parent = this; node.parentElement = this; this.children.push(node); } }
+    prepend(...nodes) { for (const node of [...nodes].reverse()) { node.parent = this; node.parentElement = this; this.children.unshift(node); } }
     attachShadow() { this.closedRoot = new Element("shadow"); return this.closedRoot; }
     setAttribute(key, value) { this.attrs[key] = value; }
     getAttribute(key) { return this.attrs[key] ?? null; }
     addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
     async emit(type, extra = {}) { for (const fn of this.listeners[type] || []) await fn({ isTrusted: true, preventDefault() {}, stopPropagation() {}, ...extra }); }
-    querySelector(selector) { return selector === "button" ? this.children.find((node) => node.tag === "button") : null; }
+    querySelector(selector) {
+      if (selector === "button") return this.children.find((node) => node.tag === "button") || null;
+      if (selector === ":scope > span:nth-of-type(1)") return this.children.filter((node) => node.tag === "span")[0] || null;
+      if (selector === ":scope > span:nth-of-type(2)") return this.children.filter((node) => node.tag === "span")[1] || null;
+      return null;
+    }
     querySelectorAll(selector) { return selector === "*" ? fields : fields.filter((node) => node.isConnected); }
     getBoundingClientRect() { return { left: 50, top: 40, bottom: 60 }; }
     remove() { this.isConnected = false; if (this.parent) this.parent.children = this.parent.children.filter((node) => node !== this); }
@@ -29,7 +35,8 @@ function fixture(origin = "https://kuma.test:7220") {
   document.documentElement = new Element("html");
   document.createElement = (tag) => new Element(tag);
   const field = new Element("div");
-  field.setAttribute("kuma-id", "SourceAddress"); field.setAttribute("kuma-data", "8.8.8.8"); fields.push(field);
+  field.setAttribute("kuma-id", "SourceAddress"); field.setAttribute("kuma-data", "8.8.8.8");
+  const label = new Element("span"); label.textContent = "SourceAddress"; const value = new Element("span"); value.textContent = "8.8.8.8"; field.append(label, value); fields.push(field);
   const context = vm.createContext({ URL, AbortController, document, location: { origin }, innerWidth: 1200, innerHeight: 900,
     window: new Element("window"),
     // Mutation callbacks are triggered explicitly, so tests don't rely on wall-clock timing.
@@ -40,14 +47,16 @@ function fixture(origin = "https://kuma.test:7220") {
     } } },
   });
   for (const source of sources) vm.runInContext(source, context);
-  const button = () => field.children[0]?.closedRoot.children[0];
+  const button = () => label.children[0]?.closedRoot.children[0];
   const menu = () => document.documentElement.children.at(-1)?.closedRoot.children.find((node) => node.tag === "section");
-  return { context, document, field, button, menu, messages, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
+  return { context, document, field, label, value, button, menu, messages, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
 }
 
 test("inline menu mounts once, sends nothing on open, and queries only the selected IOC", async () => {
   const app = fixture(); await app.ready();
-  await app.ready(); assert.equal(app.field.children.length, 1);
+  await app.ready(); assert.equal(app.label.children.length, 1);
+  assert.equal(app.field.children[1], app.value);
+  assert.match(app.button().attrs["aria-label"], /SourceAddress/);
   assert.equal(app.messages.length, 0);
   await app.button().emit("click");
   assert.equal(app.messages.length, 0);
@@ -73,12 +82,12 @@ test("reused KUMA field reads the new value and Escape closes the menu", async (
   await app.document.emit("keydown", { key: "Escape" });
   assert.equal(app.menu(), undefined);
   vm.runInContext("KumApeIocMenu.stop()", app.context);
-  assert.equal(app.field.children.length, 0);
-  await app.ready(); assert.equal(app.field.children.length, 1);
+  assert.equal(app.label.children.length, 0);
+  await app.ready(); assert.equal(app.label.children.length, 1);
 });
 
 test("menu does not mount on another port of the permitted hostname", async () => {
   const app = fixture("https://kuma.test:7223"); await app.ready();
-  assert.equal(app.field.children.length, 0);
+  assert.equal(app.label.children.length, 0);
   assert.equal(app.messages.length, 0);
 });

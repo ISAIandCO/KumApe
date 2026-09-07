@@ -117,4 +117,4 @@ KumApe берёт имя из `kuma-id`, исходное значение из 
 2. read-only private API веб-интерфейса;
 3. DOM только как fallback.
 
-Не следует добавлять process graph, Active List editing или workspace, пока не подтверждены получение полного события и хотя бы один related search на целевой KUMA 4.6.
+Получение события, related search через Public API и формирование SQL подтверждены на целевой KUMA. Поэтому локальный workspace и типизированные полезные фильтры включены с версии 0.2.0. Перед интерактивным process graph всё ещё нужно подтвердить фактические поля PID/GUID/Parent PID локальных нормализаторов; изменяющие операции с Active Lists остаются вне read-only политики KumApe.
