@@ -1,3 +1,4 @@
+import { build } from "esbuild";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -19,6 +20,9 @@ await mkdir(output, { recursive: true });
 for (const directory of ["ai", "background", "content", "options", "popup", "process-graph", "shared", "workspace"]) {
   await cp(path.join(root, "src", directory), path.join(output, directory), { recursive: true });
 }
+// Classic-script boundaries bundle the same ES modules consumed by ApePatrol.
+await build({ entryPoints: ["shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)),
+  outbase: path.join(root, "src"), outdir: output, bundle: true, format: "iife", platform: "browser", target: "firefox140" });
 await cp(path.join(root, "assets", "icons"), path.join(output, "assets", "icons"), { recursive: true });
 
 const template = await readFile(path.join(root, "src", "manifest.firefox.json"), "utf8");

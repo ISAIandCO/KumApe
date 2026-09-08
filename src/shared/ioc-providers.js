@@ -1,10 +1,10 @@
+import { IOC_API_PROVIDERS } from "./core/providers.js";
 (function (global) {
   "use strict";
-  const PROVIDERS = Object.freeze({
-    virustotal: { name: "VirusTotal", origin: "https://www.virustotal.com", types: ["ip", "domain", "url", "md5", "sha1", "sha256"] },
-    opentip: { name: "Kaspersky OpenTIP", origin: "https://opentip.kaspersky.com", types: ["ip", "domain", "url", "md5", "sha1", "sha256"] },
-    abuseipdb: { name: "AbuseIPDB", origin: "https://api.abuseipdb.com", types: ["ip"] },
-  });
+  const PROVIDERS = Object.freeze(Object.fromEntries(Object.entries(IOC_API_PROVIDERS).map(([id, provider]) => [id, {
+    ...provider, origin: provider.origin.replace(/\/\*$/, ""),
+    types: provider.types.flatMap(type => type === "hash" ? ["md5", "sha1", "sha256"] : [type]),
+  }])));
 
   function validateIoc(input) {
     const value = typeof input?.value === "string" ? input.value.trim() : "";

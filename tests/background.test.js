@@ -1,9 +1,11 @@
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
 function storage(data) {
   return {
     async get(keys) {
@@ -317,4 +319,23 @@ test("AI preserves complete ApePatrol endpoints and rejects stale previews", asy
     assert.equal((await app.message({...input,type:"ai:chat",preview})).ok,false);
     assert.equal(calls,1);
   }
+});
+
+test("ThreatFox uses the common client through KumApe key and permission adapters", async () => {
+  const app = background({ iocApiKeys: { threatfox: "  fox-key  " }, apiToken: "kuma-key" }, {}, async (url, options) => {
+    assert.equal(url.href, "https://threatfox-api.abuse.ch/api/v1/");
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers["Auth-Key"], "fox-key");
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.redirect, "error");
+    assert.deepEqual(JSON.parse(options.body), { query: "search_hash", hash: "a".repeat(64) });
+    return Response.json({ query_status: "ok", data: [{ malware: "test", confidence_level: 90 }] });
+  });
+  const result = await app.message({ type: "ioc:lookup", provider: "threatfox", ioc: { type: "sha256", value: "a".repeat(64) } });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.result.verdict, "malicious");
+  assert.equal(app.context.KumApeIoc.PROVIDERS.threatfox.origin, "https://threatfox-api.abuse.ch");
+  const denied = background({ iocApiKeys: { threatfox: "key" } }, {}, undefined, false);
+  assert.equal((await denied.message({ type: "ioc:lookup", provider: "threatfox", ioc: { type: "domain", value: "evil.example" } })).ok, false);
 });

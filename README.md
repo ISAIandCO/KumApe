@@ -1,5 +1,7 @@
 # KumApe
 
+В версии **0.3.10** выделено [общее ядро ApePatrol/KumApe](docs/shared-core.md): API провайдеров, транспорт AI, Markdown, сравнение событий и алгоритмы графа. Изменения ядра переносятся между репозиториями одной командой и проверяются общими тестами.
+
 <p align="center"><img src="assets/branding/KumApe.png" width="300" alt="KumApe"></p>
 
 Экспериментальное Firefox-расширение для аналитика Kaspersky KUMA. Идея та же, что у [ApePatrol](https://github.com/ISAIandCO/ApePatrol): меньше ручного копирования между карточкой события, поиском и TI-порталами. Реализация при этом отдельная и рассчитана на модель данных и API KUMA.
