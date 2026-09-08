@@ -262,7 +262,7 @@ function aiEndpoint(config) {
 async function runAi(message) {
   const config = await loadConfig();
   if (!config.ai?.enabled) throw new Error("Локальный AI выключен в настройках");
-  const endpoint = aiEndpoint(config);
+  const endpoint = globalThis.KumApeAiTransport.chatEndpoint(aiEndpoint(config), { expandBase: true });
   if (!await browser.permissions.contains({ origins: [permissionPattern(endpoint.origin)] })) throw new Error("Нет разрешения Firefox для локального AI endpoint");
   const request = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, config.ai.privacyMode || "strict") : await storedRequest("aiRequest", message.id);
   if (request.bytes > 200_000) throw new Error("Контекст AI превышает лимит 200 КБ. Используйте Strict или Redacted режим.");
@@ -271,8 +271,6 @@ async function runAi(message) {
     content: `${String(item?.content || "").slice(0, 20000)}${item?.role !== "assistant" && item?.context ? `\nКонтекст сообщения:\n${JSON.stringify(globalThis.KumApeAiPrivacy.prepareEvent(item.context, config.ai.privacyMode || "strict"))}` : ""}`,
   })).filter((item) => item.content) : [];
   if (!messages.length) throw new Error("Введите вопрос");
-  // ApePatrol accepts the complete endpoint; retain legacy /v1 base URLs.
-  if (/^(?:\/|.*\/v1\/?)$/.test(endpoint.pathname)) endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
   const tools = message.allowTools ? [{type:"function",function:{name:"get_additional_context",description:"Request more read-only investigation or event context from the operator. No data is fetched without their approval.",parameters:{type:"object",properties:{reason:{type:"string"}},required:["reason"],additionalProperties:false}}}] : undefined;
   const body = JSON.stringify({
         tools,
@@ -285,24 +283,7 @@ async function runAi(message) {
       });
   if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: request.payload };
   if (message.preview && (message.preview.body !== body || message.preview.endpoint !== endpoint.href)) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
-  let response;
-  try {
-    const headers = { Accept: "application/json", "Content-Type": "application/json; charset=utf-8" };
-    if (config.aiKey) headers.Authorization = `Bearer ${config.aiKey}`;
-    response = await fetch(endpoint, {
-      method: "POST", credentials: "omit", redirect: "error", signal: controller.signal,
-      headers,
-      body,
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") throw new Error("Локальный AI: превышено время ожидания 120 секунд");
-    throw error;
-  } finally { clearTimeout(timeout); }
-  if (!response.ok) throw new Error(`Локальный AI: HTTP ${response.status}`);
-  const result = await response.json();
-  const reply = result?.choices?.[0]?.message;
+  const reply = await globalThis.KumApeAiTransport.requestChatCompletion(endpoint, body, { apiKey: config.aiKey || "" });
   const content = typeof reply?.content === "string" ? reply.content : "";
   const toolCalls = message.allowTools ? (reply?.tool_calls || []).filter(call=>call?.function?.name === "get_additional_context").slice(0,4).map(call=>({name:call.function.name,arguments:String(call.function.arguments || "{}").slice(0,4000)})) : [];
   if (!content.trim() && !toolCalls.length) throw new Error("Локальный AI вернул пустой ответ");

@@ -1,8 +1,10 @@
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
-const sources = await Promise.all(["shared/kuma-adapter.js", "shared/ioc-providers.js", "content/ioc-menu.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const sources = await Promise.all(["shared/kuma-adapter.js", "shared/ioc-providers.js", "content/ioc-menu.js"].map((path) => (["shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
 
 function fixture(origin = "https://kuma.test:7220") {
   const observers = [];

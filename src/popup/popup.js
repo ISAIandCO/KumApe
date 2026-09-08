@@ -194,6 +194,14 @@ async function renderIocs() {
   for (const ioc of response.iocs) {
     const actions = addCard(container, `${ioc.type.toUpperCase()} · ${ioc.field}`, ioc.value);
     actions.append(button("Копировать", () => navigator.clipboard.writeText(ioc.value)));
+    for (const [id, provider] of Object.entries(globalThis.KumApeIoc.PROVIDERS)) {
+      if (!provider.types.includes(ioc.type)) continue;
+      actions.append(button(`${provider.name} API`, async () => {
+        const { result } = await send({ type: "ioc:lookup", provider: id, ioc });
+        report.textContent = `${result.provider}: ${result.summary}${result.details ? `\n${JSON.stringify(result.details, null, 2)}` : ""}`;
+      }));
+    }
+    const report = document.createElement("pre"); report.setAttribute("role", "status"); actions.append(report);
     for (const link of ioc.links) {
       actions.append(button(link.provider, () => send({ type: "tabs:open", url: link.url })));
     }
