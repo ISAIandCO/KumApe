@@ -23,7 +23,7 @@
       <div class="actions"><button id="restore-profiles" type="button">Вернуть рекомендуемые профили</button><button id="clear-profiles" type="button">Только общие поля</button></div>
       <fieldset>
         <legend>Поля графа процессов по Event ID</legend>
-        <p class="hint">Для каждого типа события задайте поле и значение Event ID, затем фактические поля нормализатора. Для вашего 4688 укажите <code>PID процесса = DeviceCustomString3</code> и <code>PID родителя = DeviceCustomString5</code>.</p>
+        <p class="hint">Для каждого типа события задайте поле и значение Event ID, категорию <code>DeviceEventCategory</code> и фактические поля нормализатора. Категория отличает, например, Sysmon 1 от qemu-ga с тем же Event ID. Для Windows 4688 используется <code>Microsoft-Windows-Security-Auditing</code>.</p>
         <div id="process-mappings"></div>
         <div class="actions"><button id="add-process-mapping" type="button">Добавить Event ID</button><button id="restore-process-mappings" type="button">Вернуть рекомендуемые</button></div>
       </fieldset>

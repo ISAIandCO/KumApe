@@ -39,11 +39,23 @@ test("legacy Sysmon profile migrates by DeviceEventClassID rather than category"
   const migrated = api().mappingsFromLegacyProfiles([{ name: "Sysmon", when: { DeviceEventCategory: ["Sysmon"], DeviceEventClassID: ["1"] }, processGraph: { host: ["HostX"], pid: ["PidX"], parentPid: ["ParentX"] } }]);
   assert.equal(migrated[0].eventIdField, "DeviceEventClassID");
   assert.equal(migrated[0].eventIdValue, "1");
+  assert.deepEqual([...migrated[0].eventCategories], ["Sysmon"]);
+});
+
+test("built-in process mappings qualify ambiguous Event IDs by category", () => {
+  const model = api();
+  assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "qemu-ga" }), null);
+  assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "Microsoft-Windows-Sysmon/Operational" }).name, "Sysmon Process Create 1");
+  assert.equal(model.mappingForEvent({ DeviceEventClassID: "4688" }), null);
+  const event4688 = { DeviceEventClassID: "4688", DeviceEventCategory: "Microsoft-Windows-Security-Auditing", DeviceHostName: "pc", DeviceCustomString5: "20", DeviceCustomString3: "10" };
+  const action = model.graphSearchAction(event4688);
+  assert.match(action.where, /DeviceEventClassID = '4688' AND DeviceEventCategory = 'Microsoft-Windows-Security-Auditing'/);
+  assert.match(action.where, /DeviceEventClassID = '1' AND DeviceEventCategory IN \('Microsoft-Windows-Sysmon'/);
 });
 
 test("4688 chooses a coherent PID pair, normalizes hex, and preserves custom mappings", () => {
   const model=api(); const defaults=model.BUILTIN_PROCESS_MAPPINGS;
-  const e={DeviceEventClassID:'4688',DeviceHostName:'pc',DeviceCustomString5:'0x14',DeviceCustomString3:'0x0a',DestinationProcessID:'999',SourceProcessID:'888'};
+  const e={DeviceEventClassID:'4688',DeviceEventCategory:'Microsoft-Windows-Security-Auditing',DeviceHostName:'pc',DeviceCustomString5:'0x14',DeviceCustomString3:'0x0a',DestinationProcessID:'999',SourceProcessID:'888'};
   assert.equal(model.processFields(e,model.mappingForEvent(e)).pid,'20');
   assert.equal(model.processFields(e,model.mappingForEvent(e)).parentPid,'10');
   delete e.DeviceCustomString5;
@@ -68,7 +80,7 @@ test("step graph excludes unrelated candidates, other hosts, and later PID reuse
 
 test("step queries use numeric literals for KUMA process ID fields and keep hex variants for strings", () => {
   const model = api();
-  const source = { DeviceEventClassID: "4688", DeviceHostName: "pc", DeviceCustomString5: "0x14", DeviceCustomString3: "0x0a" };
+  const source = { DeviceEventClassID: "4688", DeviceEventCategory: "Microsoft-Windows-Security-Auditing", DeviceHostName: "pc", DeviceCustomString5: "0x14", DeviceCustomString3: "0x0a" };
   const action = model.relatedAction(source, model.BUILTIN_PROCESS_MAPPINGS, "both");
   assert.match(action.where, /DeviceCustomString5 = '10'/);
   assert.match(action.where, /DeviceCustomString5 = '0xa'/);

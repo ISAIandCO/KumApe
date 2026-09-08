@@ -40,10 +40,13 @@ const keyMigration = (async () => {
     if (legacy.length) moved.fieldProfiles = local.fieldProfiles.map(({ processGraph, ...profile }) => profile);
   }
   if (local.processMappings) {
-    moved.processMappings = local.processMappings.map(mapping =>
-      mapping.eventIdValue === "4688" && mapping.pid === "DestinationProcessID" && mapping.parentPid === "SourceProcessID" && !mapping.fallbackPid
+    moved.processMappings = local.processMappings.map(mapping => {
+      const migrated = mapping.eventIdValue === "4688" && mapping.pid === "DestinationProcessID" && mapping.parentPid === "SourceProcessID" && !mapping.fallbackPid
         ? { ...mapping, pid: "DeviceCustomString5", parentPid: "DeviceCustomString3", fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID" }
-        : mapping);
+        : mapping;
+      const builtin = processApi.BUILTIN_PROCESS_MAPPINGS.find(candidate => candidate.name === migrated.name && candidate.eventIdField === migrated.eventIdField && candidate.eventIdValue === migrated.eventIdValue);
+      return migrated.eventCategories === undefined && builtin?.eventCategories ? { ...migrated, eventCategories: builtin.eventCategories } : migrated;
+    });
   }
   if (local.usefulFilters) moved.usefulFilters = globalThis.KumApeFilters.migrateBuiltinFilters(local.usefulFilters);
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
@@ -390,8 +393,11 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const eventIdField = mappedEventId ? mapping.eventRecordId : "ID";
         const eventId = mappedEventId || adapterApi.valuesForAliases(message.event, ["ID"])[0];
         if (!eventId) throw new Error("Для узла не найден ID события KUMA");
-        const action = { where: adapterApi.equalityWhere([eventIdField], eventId) };
-        return { ok: true, result: await openKumaSearchTab({ ...message, limit: 1 }, action) };
+        const timestampValue = adapterApi.valuesForAliases(message.event, ["Timestamp"])[0];
+        const timestamp = timestampValue ? Math.floor(adapterApi.eventTimestamp(message.event)) : null;
+        const action = { where: `${adapterApi.equalityWhere([eventIdField], eventId)}${timestamp ? ` AND Timestamp = ${timestamp}` : ""}` };
+        const ageSeconds = timestamp ? Math.max(0, Math.ceil((Date.now() - timestamp) / 1000) + 60) : 0;
+        return { ok: true, result: await openKumaSearchTab({ ...message, limit: 1, rangeSeconds: Math.max(Number(message.rangeSeconds) || 900, ageSeconds) }, action) };
       }
       case "workspace:open":
         await browser.tabs.create({ url: browser.runtime.getURL(message.id ? `workspace/workspace.html?id=${encodeURIComponent(message.id)}` : "workspace/workspace.html") });

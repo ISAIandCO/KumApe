@@ -7,7 +7,7 @@ const sources = await Promise.all(["shared/kuma-adapter.js", "shared/process-mod
 function api() { const context = vm.createContext({ URL, TextEncoder }); for (const source of sources) vm.runInContext(source, context); return context.KumApeFilters; }
 
 test("catalog explains unavailable filters and builds useful Windows predicates", () => {
-  const filters = api().buildUsefulFilters({ DeviceEventClassID: "4688", DeviceHostName: "host01", DestinationProcessID: "4120", SourceProcessID: "2032", DestinationProcessName: "powershell.exe" });
+  const filters = api().buildUsefulFilters({ DeviceEventClassID: "4688", DeviceEventCategory: "Microsoft-Windows-Security-Auditing", DeviceHostName: "host01", DestinationProcessID: "4120", SourceProcessID: "2032", DestinationProcessName: "powershell.exe" });
   assert.equal(filters.find((item) => item.id === "process-on-host").applicable, true);
   assert.match(filters.find((item) => item.id === "process-on-host").where, /DeviceEventClassID IN \('4688', '1', 'EXECVE'\)/);
   assert.match(filters.find((item) => item.id === "powershell-host").where, /DeviceProcessName ILIKE '%powershell\.exe'/);
