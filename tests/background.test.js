@@ -31,12 +31,13 @@ function background(local = {}, session = {}, fetchImpl = () => { throw new Erro
   return { context, createdTabs, message: (message, sender) => handler(message, sender) };
 }
 
-test("session token migrates once, survives background reload, and never appears in config", async () => {
-  const local = { uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "saved-cluster", fieldProfiles: [] };
+test("session token migrates once, survives background reload, and secrets never appear in config", async () => {
+  const local = { uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "saved-cluster", fieldProfiles: [], aiApiKey: "synthetic-ai-key" };
   const session = { apiToken: "synthetic-key", iocApiKeys: { virustotal: "synthetic-vt" } };
   const first = background(local, session);
   const config = await first.message({ type: "config:get" });
   assert.equal(config.config.tokenPresent, true);
+  assert.equal(config.config.aiKeyPresent, true);
   assert.equal(JSON.stringify(config).includes("synthetic"), false);
   assert.equal(local.apiToken, "synthetic-key");
   assert.deepEqual(session, {});
@@ -147,11 +148,12 @@ test("custom useful filters are rebuilt from stored templates", async () => {
   assert.match(query.query, /SourceAddress = '10\.0\.0\.1'/);
 });
 
-test("local AI keeps event data out of URLs and sends only the prepared payload", async () => {
+test("local AI keeps event data out of URLs and sends only the prepared payload with its own key", async () => {
   const session = {};
   let body;
-  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "synthetic", privacyMode: "strict" } }, session, async (url, options) => {
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "synthetic", privacyMode: "strict" }, aiApiKey: "local-ai-secret" }, session, async (url, options) => {
     assert.equal(url.href, "http://127.0.0.1:8080/v1/chat/completions");
+    assert.equal(options.headers.Authorization, "Bearer local-ai-secret");
     body = JSON.parse(options.body);
     return Response.json({ choices: [{ message: { content: "Локальный ответ" } }] });
   });

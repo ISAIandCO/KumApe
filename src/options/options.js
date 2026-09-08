@@ -68,6 +68,7 @@ async function load() {
   $("#ai-endpoint").value = config.ai?.endpoint || "http://127.0.0.1:8080/v1";
   $("#ai-model").value = config.ai?.model || "local-model";
   $("#ai-privacy").value = config.ai?.privacyMode || "strict";
+  $("#ai-api-key").placeholder = config.aiKeyPresent ? "Ключ сохранён" : "Не сохранён";
   renderClusters([], config.clusterId || "");
   if (config.clusterId) {
     $("#cluster-id").add(new Option(config.clusterId, config.clusterId));
@@ -113,6 +114,12 @@ async function save() {
     $("#api-token").value = "";
     $("#api-token").placeholder = "Токен сохранён";
   }
+  const aiKey = $("#ai-api-key").value.trim();
+  if (aiKey) {
+    await browser.storage.local.set({ aiApiKey: aiKey });
+    $("#ai-api-key").value = "";
+    $("#ai-api-key").placeholder = "Ключ сохранён";
+  }
   show("Настройки сохранены.");
 }
 
@@ -121,6 +128,12 @@ $("#settings").addEventListener("submit", (event) => {
   save().catch((error) => show(error.message, true));
 });
 $("#save-ai").addEventListener("click", () => save().catch((error) => show(error.message, true)));
+$("#clear-ai-key").addEventListener("click", async () => {
+  await browser.storage.local.remove("aiApiKey");
+  $("#ai-api-key").value = "";
+  $("#ai-api-key").placeholder = "Не сохранён";
+  show("API-ключ локального AI удалён.");
+});
 $("#clear-token").addEventListener("click", async () => {
   await browser.storage.session.remove("apiToken");
   await browser.storage.local.remove("apiToken");
