@@ -245,7 +245,7 @@ test("step mode queries selected relations, merges expansions and rejects foreig
 test("graph nodes fall back to the universal KUMA ID when the mapped ID is unavailable", async () => {
  const mappings=[{name:"Custom",eventIdField:"DeviceEventClassID",eventIdValue:"4688",host:"HostX",pid:"PidX",parentPid:"ParentX",processGuid:"",parentGuid:"",image:"",commandLine:"",user:"",eventRecordId:"CustomEventId",fallbackPid:"",fallbackParentPid:""}];
  const session={};const app=background({uiOrigin:"https://kuma.test",apiOrigin:"https://kuma.test:7223",clusterId:"c",processMappings:mappings},session);
- const occurredAt=new Date(Date.now()-3600_000).toISOString();
+ const occurredAt="2026-09-07T10:01:21.123Z";
  const event={ID:"event-uuid",DeviceEventClassID:"4688",HostX:"pc",PidX:"20",ParentX:"10",Timestamp:occurredAt};
  const opened=await app.message({type:"process:event:open",event,rangeSeconds:900});
  assert.equal(opened.ok,true,opened.error);
@@ -253,8 +253,10 @@ test("graph nodes fall back to the universal KUMA ID when the mapped ID is unava
  const encoded=new URLSearchParams(url.hash.split("?")[1]).get("search");
  const payload=JSON.parse(decodeURIComponent(encoded));
  assert.match(payload.sql,/ID = 'event-uuid'/);
- assert.match(payload.sql,new RegExp(`Timestamp = ${Date.parse(occurredAt)}`));
- assert.notEqual(payload.period.relative,"now-15m");
+ assert.doesNotMatch(payload.sql,/Timestamp =/);
+ assert.match(payload.sql,/LIMIT 250$/);
+ const from=Math.floor(Date.parse(occurredAt)/60_000)*60_000;
+ assert.deepEqual(payload.period,{from,to:from+59_999});
  assert.deepEqual(session,{});
 });
 

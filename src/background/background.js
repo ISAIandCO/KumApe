@@ -167,7 +167,7 @@ async function openKumaSearchTab(message, action) {
   const config = await loadConfig();
   if (!config.uiOrigin) throw new Error("Сначала укажите адрес KUMA в настройках");
   const query = adapterApi.buildEventsQuery(action.where, message.limit);
-  const tab = await browser.tabs.create({ url: adapterApi.threatHuntingUrl(config.uiOrigin, query, message.rangeSeconds) });
+  const tab = await browser.tabs.create({ url: adapterApi.threatHuntingUrl(config.uiOrigin, query, action.period || message.rangeSeconds) });
   if (!Number.isInteger(tab?.id)) throw new Error("Firefox не вернул идентификатор вкладки KUMA");
   return { tabId: tab.id };
 }
@@ -393,11 +393,9 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const eventIdField = mappedEventId ? mapping.eventRecordId : "ID";
         const eventId = mappedEventId || adapterApi.valuesForAliases(message.event, ["ID"])[0];
         if (!eventId) throw new Error("Для узла не найден ID события KUMA");
-        const timestampValue = adapterApi.valuesForAliases(message.event, ["Timestamp"])[0];
-        const timestamp = timestampValue ? Math.floor(adapterApi.eventTimestamp(message.event)) : null;
-        const action = { where: `${adapterApi.equalityWhere([eventIdField], eventId)}${timestamp ? ` AND Timestamp = ${timestamp}` : ""}` };
-        const ageSeconds = timestamp ? Math.max(0, Math.ceil((Date.now() - timestamp) / 1000) + 60) : 0;
-        return { ok: true, result: await openKumaSearchTab({ ...message, limit: 1, rangeSeconds: Math.max(Number(message.rangeSeconds) || 900, ageSeconds) }, action) };
+        const timestamp = Math.floor(adapterApi.eventTimestamp(message.event));
+        const from = Math.floor(timestamp / 60_000) * 60_000;
+        return { ok: true, result: await openKumaSearchTab(message, { where: adapterApi.equalityWhere([eventIdField], eventId), period: { from, to: from + 59_999 } }) };
       }
       case "workspace:open":
         await browser.tabs.create({ url: browser.runtime.getURL(message.id ? `workspace/workspace.html?id=${encodeURIComponent(message.id)}` : "workspace/workspace.html") });
