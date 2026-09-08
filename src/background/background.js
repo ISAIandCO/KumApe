@@ -237,9 +237,14 @@ async function runProcessGraph(message) {
 async function storedRequest(prefix, id) {
   if (!/^[a-z0-9_-]{8,100}$/i.test(String(id || ""))) throw new Error("Некорректный идентификатор запроса");
   const key = `${prefix}:${id}`;
-  const value = (await browser.storage.session.get(key))[key];
+  const storage = prefix === "aiRequest" ? browser.storage.local : browser.storage.session;
+  let value = (await storage.get(key))[key];
+  if (!value && prefix === "aiRequest") {
+    value = (await browser.storage.session.get(key))[key];
+    if (value) await storage.set({ [key]: value });
+  }
   if (!value) throw new Error("Запрос не найден. Откройте результаты заново из KumApe.");
-  if (value.expiresAt < Date.now()) {
+  if (prefix !== "aiRequest" && value.expiresAt < Date.now()) {
     await browser.storage.session.remove(key);
     throw new Error("Запрос устарел. Откройте результаты заново из KumApe.");
   }
@@ -259,31 +264,37 @@ async function runAi(message) {
   if (!config.ai?.enabled) throw new Error("Локальный AI выключен в настройках");
   const endpoint = aiEndpoint(config);
   if (!await browser.permissions.contains({ origins: [permissionPattern(endpoint.origin)] })) throw new Error("Нет разрешения Firefox для локального AI endpoint");
-  const request = await storedRequest("aiRequest", message.id);
+  const request = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, config.ai.privacyMode || "strict") : await storedRequest("aiRequest", message.id);
   if (request.bytes > 200_000) throw new Error("Контекст AI превышает лимит 200 КБ. Используйте Strict или Redacted режим.");
   const messages = Array.isArray(message.messages) ? message.messages.slice(-20).map((item) => ({
     role: item?.role === "assistant" ? "assistant" : "user",
-    content: String(item?.content || "").slice(0, 20000),
+    content: `${String(item?.content || "").slice(0, 20000)}${item?.role !== "assistant" && item?.context ? `\nКонтекст сообщения:\n${JSON.stringify(globalThis.KumApeAiPrivacy.prepareEvent(item.context, config.ai.privacyMode || "strict"))}` : ""}`,
   })).filter((item) => item.content) : [];
   if (!messages.length) throw new Error("Введите вопрос");
-  const base = endpoint.href.endsWith("/") ? endpoint.href : `${endpoint.href}/`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
-  let response;
-  try {
-    const headers = { Accept: "application/json", "Content-Type": "application/json; charset=utf-8" };
-    if (config.aiKey) headers.Authorization = `Bearer ${config.aiKey}`;
-    response = await fetch(new URL("chat/completions", base), {
-      method: "POST", credentials: "omit", signal: controller.signal,
-      headers,
-      body: JSON.stringify({
+  // ApePatrol accepts the complete endpoint; retain legacy /v1 base URLs.
+  if (/^(?:\/|.*\/v1\/?)$/.test(endpoint.pathname)) endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
+  const tools = message.allowTools ? [{type:"function",function:{name:"get_additional_context",description:"Request more read-only investigation or event context from the operator. No data is fetched without their approval.",parameters:{type:"object",properties:{reason:{type:"string"}},required:["reason"],additionalProperties:false}}}] : undefined;
+  const body = JSON.stringify({
+        tools,
         model: config.ai.model || "local-model", stream: false,
         messages: [
           { role: "system", content: "Ты SOC-аналитик. Анализируй только приложенное событие KUMA. Не выдумывай отсутствующие факты. Отвечай по-русски, кратко и структурированно." },
           { role: "user", content: `Контекст события KUMA:\n${JSON.stringify(request.payload)}` },
           ...messages,
         ],
-      }),
+      });
+  if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: request.payload };
+  if (message.preview && (message.preview.body !== body || message.preview.endpoint !== endpoint.href)) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  let response;
+  try {
+    const headers = { Accept: "application/json", "Content-Type": "application/json; charset=utf-8" };
+    if (config.aiKey) headers.Authorization = `Bearer ${config.aiKey}`;
+    response = await fetch(endpoint, {
+      method: "POST", credentials: "omit", redirect: "error", signal: controller.signal,
+      headers,
+      body,
     });
   } catch (error) {
     if (error?.name === "AbortError") throw new Error("Локальный AI: превышено время ожидания 120 секунд");
@@ -291,9 +302,11 @@ async function runAi(message) {
   } finally { clearTimeout(timeout); }
   if (!response.ok) throw new Error(`Локальный AI: HTTP ${response.status}`);
   const result = await response.json();
-  const content = result?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) throw new Error("Локальный AI вернул пустой ответ");
-  return content;
+  const reply = result?.choices?.[0]?.message;
+  const content = typeof reply?.content === "string" ? reply.content : "";
+  const toolCalls = message.allowTools ? (reply?.tool_calls || []).filter(call=>call?.function?.name === "get_additional_context").slice(0,4).map(call=>({name:call.function.name,arguments:String(call.function.arguments || "{}").slice(0,4000)})) : [];
+  if (!content.trim() && !toolCalls.length) throw new Error("Локальный AI вернул пустой ответ");
+  return {content,toolCalls};
 }
 
 browser.tabs.onRemoved?.addListener(async tabId => {
@@ -397,11 +410,11 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "process:cancel":
         processOperations.delete(message.id);
         return { ok: true };
+      case "event:open":
       case "process:event:open": {
         const config = await loadConfig();
         const mapping = processApi.mappingForEvent(message.event, config.processMappings);
-        if (!mapping) throw new Error("Для узла не найдено сопоставление полей графа");
-        const mappedEventId = mapping.eventRecordId && adapterApi.valuesForAliases(message.event, [mapping.eventRecordId])[0];
+        const mappedEventId = mapping?.eventRecordId && adapterApi.valuesForAliases(message.event, [mapping.eventRecordId])[0];
         const eventIdField = mappedEventId ? mapping.eventRecordId : "ID";
         const eventId = mappedEventId || adapterApi.valuesForAliases(message.event, ["ID"])[0];
         if (!eventId) throw new Error("Для узла не найден ID события KUMA");
@@ -412,6 +425,19 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "workspace:open":
         await browser.tabs.create({ url: browser.runtime.getURL(message.id ? `workspace/workspace.html?id=${encodeURIComponent(message.id)}` : "workspace/workspace.html") });
         return { ok: true };
+      case "workspace:search": {
+        const items = await globalThis.KumApeInvestigations.listItems(message.investigationId);
+        const config = await loadConfig();
+        const selections = Array.isArray(message.entities) ? message.entities.slice(0,20) : [];
+        if (!selections.length) throw new Error("Выберите сущности графа");
+        const predicates = selections.map(entity => {
+          const action = items.flatMap(item => adapterApi.buildRelatedActions(item.payload,config.fieldProfiles)).find(action => action.kind === entity.entityType && action.value.toLowerCase() === String(entity.label).toLowerCase());
+          if (!action) throw new Error("Сущность отсутствует в расследовании или её поля не настроены");
+          return `(${action.where})`;
+        });
+        const range = [900,3600,86400,604800].includes(message.rangeSeconds) ? message.rangeSeconds : 3600;
+        return {ok:true,result:await (await adapter()).searchRelated({where:predicates.join(message.mode === "any" ? " OR " : " AND ")},items[0].payload,range,250)};
+      }
       case "ai:open": {
         const config = await loadConfig();
         if (!config.ai?.enabled) throw new Error("Включите локальный AI в настройках KumApe");
@@ -432,7 +458,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const preview = globalThis.KumApeAiPrivacy.preview(unique.length === 1 ? unique[0] : {Events:unique}, config.ai.privacyMode || "strict");
         if (preview.bytes > 200000) throw new Error("Контекст AI превышает 200 КБ; выберите более строгий режим");
         const id = existing?.id || requestId();
-        await browser.storage.session.set({ [`aiRequest:${id}`]: { payload: preview.payload, fields: preview.fields, bytes: preview.bytes, mode: preview.mode, expiresAt: Date.now() + 24 * 60 * 60_000 } });
+        await browser.storage.local.set({ [`aiRequest:${id}`]: { payload: preview.payload, fields: preview.fields, bytes: preview.bytes, mode: preview.mode, historyKey: sessionKey ? `aiTabHistory:${config.uiOrigin}:${message.sourceTabId}` : `aiHistory:${id}` } });
         if (existing?.tabId) {
           try {
             const tab = await browser.tabs.get(existing.tabId);
@@ -448,10 +474,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "ai:request:get": {
         const request = await storedRequest("aiRequest", message.id);
         const config = await loadConfig();
-        return { ok: true, preview: { fields: request.fields, bytes: request.bytes, mode: request.mode, endpoint: config.ai?.endpoint, model: config.ai?.model } };
+        return { ok: true, preview: { historyKey: request.historyKey, payload: request.payload, fields: request.fields, bytes: request.bytes, mode: request.mode, endpoint: config.ai?.endpoint, model: config.ai?.model } };
       }
+      case "ai:preview":
+        return { ok: true, preview: await runAi(message) };
       case "ai:chat":
-        return { ok: true, content: await runAi(message) };
+        return { ok: true, ...await runAi(message) };
       case "ioc:list": {
         const iocs = adapterApi.iocsFromEvent(message.event);
         return { ok: true, iocs: iocs.map((ioc) => ({ ...ioc, links: adapterApi.iocLinks(ioc) })) };

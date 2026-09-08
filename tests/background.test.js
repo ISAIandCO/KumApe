@@ -292,10 +292,29 @@ test("graph nodes fall back to the universal KUMA ID when the mapped ID is unava
 });
 
 test('AI reuses a chat for a source tab and sanitizes appended events',async()=>{
- const session={};const app=background({uiOrigin:'https://kuma.test',ai:{enabled:true,endpoint:'http://127.0.0.1:8080/v1',privacyMode:'strict'}},session);
+ const session={};const local={uiOrigin:'https://kuma.test',ai:{enabled:true,endpoint:'http://127.0.0.1:8080/v1',privacyMode:'strict'}};const app=background(local,session);
  assert.equal((await app.message({type:'ai:open',sourceTabId:99,event:{DeviceHostName:'first',Raw:'SECRET'}})).ok,true);
  assert.equal((await app.message({type:'ai:open',sourceTabId:99,event:{DeviceHostName:'second',Raw:'SECRET'}})).ok,true);
  assert.equal(app.createdTabs.length,1);
- const payload=Object.entries(session).find(([key])=>key.startsWith('aiRequest:'))[1].payload;
+ const payload=Object.entries(local).find(([key])=>key.startsWith('aiRequest:'))[1].payload;
  assert.equal(payload.Events.length,2);assert.equal(JSON.stringify(payload).includes('SECRET'),false);
+});
+
+
+test("AI preserves complete ApePatrol endpoints and rejects stale previews", async () => {
+  for (const endpoint of ["http://192.168.1.10:1234/v1/chat/completions", "http://192.168.1.10:1234/custom/completions/"]) {
+    let calls = 0;
+    const local = {ai:{enabled:true,endpoint,model:"model",privacyMode:"strict"}};
+    const app = background(local, {}, async (url, options) => {
+      calls++; assert.equal(url.href, endpoint); assert.equal(options.redirect,"error");
+      return Response.json({choices:[{message:{content:"OK"}}]});
+    });
+    const input = {event:{DeviceHostName:"host"},messages:[{role:"user",content:"Analyze"}]};
+    const {preview} = await app.message({...input,type:"ai:preview"});
+    assert.equal(calls,0);
+    assert.equal((await app.message({...input,type:"ai:chat",preview})).ok,true);
+    local.ai.model="changed";
+    assert.equal((await app.message({...input,type:"ai:chat",preview})).ok,false);
+    assert.equal(calls,1);
+  }
 });

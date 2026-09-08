@@ -259,6 +259,9 @@ async function initialize() {
     return;
   }
   await refreshContext();
+  const { mountChat } = await import("../shared/chat-view.js");
+  const { relatedAiContext } = await import("../shared/ai-context.js");
+  await mountChat($("#popup-chat"), `aiTabHistory:${state.config.uiOrigin}:${state.tab.id}`, () => ({event:state.context.event}), () => relatedAiContext(state.context.event));
 }
 
 $("#tabs").addEventListener("click", (event) => {

@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KumApe — расследования</title><link rel="stylesheet" href="workspace.css"></head>
 <body>
   <header><img src="../assets/icons/icon-48.png" alt=""><div><h1>Расследования KumApe</h1><p id="status" role="status">Локальное хранилище · данные не покидают Firefox</p></div><button id="create">Новое расследование</button></header>
-  <main><aside id="list"></aside><section id="detail"><p class="empty">Выберите или создайте расследование.</p></section></main>
+  <main><aside><input id="workspace-search" type="search" placeholder="Поиск по названию, тегам и заметкам"><select id="workspace-sort" aria-label="Порядок расследований"><option value="updated">Сначала обновлённые</option><option value="created">Сначала созданные</option><option value="title">По названию</option></select><nav id="list"></nav></aside><section id="detail"><p class="empty">Выберите или создайте расследование.</p></section></main>
   <script src="../shared/kuma-adapter.js"></script><script src="../shared/investigation-db.js"></script><script type="module" src="workspace.js"></script>
 </body>
 </html>
