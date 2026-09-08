@@ -99,7 +99,7 @@ async function save() {
   const origins = [uiOrigin, apiOrigin];
   if (ai.enabled) {
     const endpoint = new URL(ai.endpoint);
-    if (!/^https?:$/.test(endpoint.protocol) || !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)) throw new Error("AI endpoint должен быть локальным: localhost, 127.0.0.1 или [::1]");
+    if (!/^https?:$/.test(endpoint.protocol) || !api.isLocalNetworkHost(endpoint.hostname)) throw new Error("AI endpoint должен находиться на этом компьютере или в локальной сети");
     origins.push(endpoint.origin);
   }
   const granted = await browser.permissions.request({ origins: [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });

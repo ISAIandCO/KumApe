@@ -8,7 +8,6 @@ function fixture(origin = "https://kuma.test:7220") {
   const observers = [];
   const messages = [];
   const clipboard = [];
-  const fields = [];
   const elements = [];
   class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.style = {}; this.listeners = {}; this.isConnected = true; this.offsetWidth = 330; this.offsetHeight = 400; elements.push(this); }
@@ -25,7 +24,14 @@ function fixture(origin = "https://kuma.test:7220") {
       if (selector === ":scope > span:nth-of-type(2)") return this.children.filter((node) => node.tag === "span")[1] || null;
       return null;
     }
-    querySelectorAll(selector) { return selector === "*" ? fields : fields.filter((node) => node.isConnected); }
+    querySelectorAll(selector) {
+      const descendants = [];
+      const visit = (parent) => { for (const child of parent.children) { descendants.push(child); visit(child); } };
+      visit(this);
+      if (selector === "*") return descendants.filter((node) => node.isConnected);
+      if (selector === '[kuma-section="event-field"][kuma-id]') return descendants.filter((node) => node.isConnected && node.attrs["kuma-section"] === "event-field" && node.attrs["kuma-id"]);
+      return [];
+    }
     getBoundingClientRect() { return { left: 50, top: 40, bottom: 60 }; }
     remove() { this.isConnected = false; if (this.parent) this.parent.children = this.parent.children.filter((node) => node !== this); }
     showPopover() { this.visible = true; }
@@ -34,12 +40,21 @@ function fixture(origin = "https://kuma.test:7220") {
   }
   const document = new Element("document");
   document.documentElement = new Element("html");
+  document.append(document.documentElement);
   document.createElement = (tag) => new Element(tag);
   const field = new Element("div");
-  field.setAttribute("kuma-id", "SourceAddress"); field.setAttribute("kuma-data", "8.8.8.8");
-  const label = new Element("span"); label.textContent = "SourceAddress"; const value = new Element("span"); value.textContent = "8.8.8.8"; field.append(label, value); fields.push(field);
+  field.setAttribute("kuma-section", "event-field"); field.setAttribute("kuma-id", "SourceAddress"); field.setAttribute("kuma-data", "8.8.8.8");
+  const label = new Element("span"); label.textContent = "SourceAddress"; const value = new Element("span"); value.textContent = "8.8.8.8"; field.append(label, value);
   const headingWrapper = new Element("div"); headingWrapper.textContent = "Информация о событии";
-  const heading = new Element("h2"); heading.textContent = "Информация о событии"; headingWrapper.append(heading); fields.push(headingWrapper, heading);
+  const heading = new Element("h2"); heading.textContent = "Информация о событии"; headingWrapper.append(heading);
+  const plainTitleField = new Element("div"); plainTitleField.setAttribute("kuma-section", "event-field"); plainTitleField.setAttribute("kuma-id", "Message"); plainTitleField.setAttribute("kuma-data", "Информация о событии");
+  const plainTitleLabel = new Element("span"); plainTitleLabel.textContent = "Message"; const plainTitle = new Element("span"); plainTitle.textContent = "Информация о событии"; plainTitleField.append(plainTitleLabel, plainTitle);
+  const extraFields = [["Timestamp", "2026-09-08T10:00:00Z"], ["DeviceEventClassID", "1"]].map(([id, data]) => {
+    const node = new Element("div"); node.setAttribute("kuma-section", "event-field"); node.setAttribute("kuma-id", id); node.setAttribute("kuma-data", data); return node;
+  });
+  const card = new Element("article"); card.append(headingWrapper, field, plainTitleField, ...extraFields);
+  const unrelatedWrapper = new Element("div"); const unrelatedTitle = new Element("span"); unrelatedTitle.textContent = "Информация о событии"; unrelatedWrapper.append(unrelatedTitle);
+  document.documentElement.append(card, unrelatedWrapper);
   const kumaEvent = { ID: "event-id", SourceAddress: "8.8.8.8", Timestamp: "2026-09-08T10:00:00Z" };
   const context = vm.createContext({ URL, AbortController, document, location: { origin, href: `${origin}/events/event-id` }, innerWidth: 1200, innerHeight: 900,
     window: new Element("window"),
@@ -57,8 +72,8 @@ function fixture(origin = "https://kuma.test:7220") {
   for (const source of sources) vm.runInContext(source, context);
   const button = () => label.children[0]?.closedRoot.children[0];
   const eventButton = () => heading.children[0]?.closedRoot.children[0];
-  const menu = () => document.documentElement.children.at(-1)?.closedRoot.children.find((node) => node.tag === "section");
-  return { context, document, field, label, value, headingWrapper, heading, button, eventButton, menu, messages, clipboard, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
+  const menu = () => [...elements].reverse().find((node) => node.isConnected && node.closedRoot?.children.some((child) => child.tag === "section"))?.closedRoot.children.find((node) => node.tag === "section");
+  return { context, document, field, label, value, headingWrapper, heading, plainTitle, unrelatedTitle, button, eventButton, menu, messages, clipboard, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
 }
 
 test("inline menu mounts once, sends nothing on open, and queries only the selected IOC", async () => {
@@ -99,6 +114,8 @@ test("reused KUMA field reads the new value and Escape closes the menu", async (
 test("event header menu reuses the current event actions", async () => {
   const app = fixture(); await app.ready();
   assert.equal(app.headingWrapper.children.length, 1);
+  assert.equal(app.plainTitle.children.length, 0);
+  assert.equal(app.unrelatedTitle.children.length, 0);
   assert.equal(app.eventButton().textContent, "🐵 Действия");
   await app.eventButton().emit("click");
   const menu = app.menu();

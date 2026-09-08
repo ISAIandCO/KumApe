@@ -187,7 +187,12 @@
   }
   function isEventTitle(node) {
     const exact = (value) => value?.replace(/\s+/g, " ").trim().toLowerCase() === "информация о событии";
-    return exact(node.textContent) && ![...(node.children || [])].some((child) => exact(child.textContent));
+    if (!exact(node.textContent) || [...(node.children || [])].some((child) => exact(child.textContent))) return false;
+    for (let parent = node.parentElement, depth = 0; parent && depth < 8; parent = parent.parentElement, depth++) {
+      if (parent.getAttribute?.("kuma-section") === "event-field" || parent === document.body || parent === document.documentElement) return false;
+      if ((parent.querySelectorAll?.(selector).length || 0) >= 3) return true;
+    }
+    return false;
   }
   function scan() {
     if (!running) return;
