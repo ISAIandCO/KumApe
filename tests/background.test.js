@@ -104,14 +104,14 @@ test("legacy processGraph settings migrate to separate Event ID mappings", async
   assert.equal("processGraph" in local.fieldProfiles[0], false);
 });
 
-test("stored built-in process mappings gain categories without changing custom mappings", async () => {
+test("stored Event ID 1 mappings gain Sysmon categories", async () => {
   const local = { processMappings: [
     { name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
     { name: "Custom", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
   ] };
   await background(local).message({ type: "config:get" });
   assert.deepEqual([...local.processMappings[0].eventCategories], ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"]);
-  assert.equal(local.processMappings[1].eventCategories, undefined);
+  assert.deepEqual([...local.processMappings[1].eventCategories], ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"]);
 });
 
 test("process graph request uses configured PID fields and opens graph page", async () => {

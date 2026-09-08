@@ -52,6 +52,8 @@
         eventCategories: [...new Set((Array.isArray(mapping.eventCategories) ? mapping.eventCategories : String(mapping.eventCategories || "").split(","))
           .map((value) => String(value).trim()).filter(Boolean))],
       };
+      const defaultMapping = BUILTIN_PROCESS_MAPPINGS.find((candidate) => candidate.eventIdValue === "1" && candidate.eventIdField.toLowerCase() === normalized.eventIdField.toLowerCase() && candidate.eventIdValue.toLowerCase() === normalized.eventIdValue.toLowerCase());
+      if (!normalized.eventCategories.length && defaultMapping?.eventCategories) normalized.eventCategories = [...defaultMapping.eventCategories];
       if (normalized.eventCategories.length > 20 || normalized.eventCategories.some((value) => value.length > 256)) throw new TypeError(`${context}: слишком много или слишком длинные категории событий`);
       for (const key of FIELD_KEYS) normalized[key] = safeField(mapping[key], ["host", "pid", "parentPid"].includes(key), `${context}.${key}`);
       if (Boolean(normalized.fallbackPid) !== Boolean(normalized.fallbackParentPid)) throw new TypeError(`${context}: укажите оба резервных PID-поля`);
