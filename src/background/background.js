@@ -308,7 +308,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     if (sender?.tab && !sender.url?.startsWith(browser.runtime.getURL(""))) {
       const config = await loadConfig();
       if (!sender.url || new URL(sender.url).origin !== config.uiOrigin
-        || !["ioc:lookup", "ioc:open", "ioc:options"].includes(message.type)) {
+        || !["ioc:lookup", "ioc:open", "ioc:options", "investigation:event:add"].includes(message.type)) {
         throw new Error("Сообщение разрешено только из карточки настроенной KUMA");
       }
       if (!await browser.permissions.contains({ origins: [permissionPattern(config.uiOrigin)] })) {
@@ -329,6 +329,14 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "ioc:options":
         await browser.runtime.openOptionsPage();
         return { ok: true };
+
+      case "investigation:event:add": {
+        const investigations = (await globalThis.KumApeInvestigations.listInvestigations()).filter((item) => item.status === "open");
+        const investigation = investigations[0] || await globalThis.KumApeInvestigations.createInvestigation(`Расследование ${new Date().toLocaleString("ru-RU")}`);
+        const config = await loadConfig();
+        await globalThis.KumApeInvestigations.addEvent(investigation.id, message.event, { uiOrigin: config.uiOrigin, url: sender?.url || null });
+        return { ok: true, investigation: { id: investigation.id, title: investigation.title } };
+      }
 
       case "config:get": {
         const config = await loadConfig();
