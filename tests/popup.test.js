@@ -5,6 +5,14 @@ import vm from "node:vm";
 
 const source = await readFile(new URL("../src/popup/popup.js", import.meta.url), "utf8");
 
+test("useful filters use one dropdown with missing-field labels and preview actions", async () => {
+  const html = await readFile(new URL("../src/popup/popup.html", import.meta.url), "utf8");
+  assert.match(html, /id="useful-filter"/);
+  assert.match(html, /id="filter-preview"/);
+  assert.match(source, /нет полей:/);
+  assert.doesNotMatch(html, /id="filter-list"/);
+});
+
 function popup(executeScript) {
   const elements = new Map();
   const context = vm.createContext({

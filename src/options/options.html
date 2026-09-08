@@ -27,6 +27,12 @@
         <div id="process-mappings"></div>
         <div class="actions"><button id="add-process-mapping" type="button">Добавить Event ID</button><button id="restore-process-mappings" type="button">Вернуть рекомендуемые</button></div>
       </fieldset>
+      <fieldset>
+        <legend>Полезные фильтры</legend>
+        <p class="hint">Редактируемый JSON-массив SQL-шаблонов. Значения события подставляются через <code>${ИмяПоля}</code> с экранированием. Логические группы <code>${@host}</code>, <code>${@account}</code>, <code>${@process}</code>, <code>${@ip}</code>, <code>${@file}</code> и другие используют активный профиль полей. <code>timeRange</code>: <code>5m</code>, <code>15m</code>, <code>1h</code>, <code>24h</code>, <code>7d</code> или <code>30d</code>; <code>enabled: false</code> скрывает фильтр.</p>
+        <textarea id="useful-filters" rows="24" spellcheck="false" required></textarea>
+        <div class="actions"><button id="restore-useful-filters" type="button">Вернуть рекомендуемые фильтры</button></div>
+      </fieldset>
       <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
     </form>
     <section>
@@ -54,6 +60,7 @@
   </main>
   <script src="../shared/kuma-adapter.js"></script>
   <script src="../shared/process-model.js"></script>
+  <script src="../shared/useful-filters.js"></script>
   <script src="../shared/ioc-providers.js"></script>
   <script src="options.js"></script>
 </body>

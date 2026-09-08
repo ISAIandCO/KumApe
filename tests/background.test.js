@@ -122,9 +122,20 @@ test("useful filters are typed, hide predicates from UI, and reject an inapplica
   const processes = result.filters.find((filter) => filter.id === "process-on-host");
   assert.equal(processes.applicable, true);
   assert.equal("where" in processes, false);
+  assert.match(processes.preview, /DeviceHostName = 'host01'/);
   const query = await app.message({ type: "filters:query", filterId: processes.id, event });
   assert.match(query.query, /DeviceHostName = 'host01'/);
   assert.equal((await app.message({ type: "filters:query", filterId: "events-by-hash", event })).ok, false);
+});
+
+test("custom useful filters are rebuilt from stored templates", async () => {
+  const usefulFilters = [{ id: "custom-ip", name: "Мой IP", description: "Локальный шаблон", template: "SourceAddress = '${SourceAddress}'", timeRange: "7d", enabled: true }];
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", usefulFilters });
+  const event = { SourceAddress: "10.0.0.1" };
+  const listed = await app.message({ type: "filters:list", event });
+  assert.equal(listed.filters.find((filter) => filter.id === "custom-ip").rangeSeconds, 604800);
+  const query = await app.message({ type: "filters:query", filterId: "custom-ip", event });
+  assert.match(query.query, /SourceAddress = '10\.0\.0\.1'/);
 });
 
 test("local AI keeps event data out of URLs and sends only the prepared payload", async () => {

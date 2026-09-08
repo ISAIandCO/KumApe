@@ -11,6 +11,7 @@ h2 { font-size: 15px; }
 h3 { font-size: 13px; overflow-wrap: anywhere; }
 #status { opacity: .7; overflow-wrap: anywhere; }
 button, select { font: inherit; }
+select { padding: 6px 8px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; background: Canvas; color: CanvasText; }
 button { padding: 6px 10px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; background: color-mix(in srgb, Canvas 92%, #2b79c2); color: CanvasText; cursor: pointer; }
 button:hover { border-color: #2b79c2; }
 button:disabled { opacity: .45; cursor: default; }
@@ -34,6 +35,8 @@ pre { max-height: 295px; margin: 8px 0; padding: 9px; overflow: auto; white-spac
 .card p { margin-top: 3px; overflow-wrap: anywhere; }
 .card .actions { margin-top: 7px; }
 .card.unavailable { opacity: .58; }
+#useful-filter { width: 100%; }
+#filter-preview { max-height: 150px; }
 .investigation-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
 .investigation-actions select { min-width: 180px; flex: 1; }
 #related-result { max-height: 230px; border: 1px solid color-mix(in srgb, #2b79c2 55%, transparent); }

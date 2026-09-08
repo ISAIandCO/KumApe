@@ -134,30 +134,41 @@ async function renderRelated() {
 }
 
 async function renderFilters() {
-  const container = $("#filter-list"); container.replaceChildren(); state.filters = [];
-  if (!state.context?.event) { container.textContent = "Нужны структурированные поля текущего события."; return; }
-  const response = await send({ type: "filters:list", event: state.context.event }); state.filters = response.filters;
-  for (const filter of response.filters) {
-    const actions = addCard(container, filter.title, filter.applicable ? filter.description : filter.reason);
-    const card = actions.parentElement; if (!filter.applicable) { card.classList.add("unavailable"); continue; }
-    if (filter.id === "process-relatives") {
-      actions.append(
-        button("Открыть граф", async () => { await send({ type: "process:open-graph", event: state.context.event, rangeSeconds: Number($("#range").value), limit: 1000 }); setStatus("Граф процессов открыт"); }),
-        button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 1000 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
-        button("Открыть в KUMA", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 1000 }); setStatus("Фильтр передан в новую вкладку KUMA"); }),
-      );
-      continue;
-    }
-    actions.append(
-      button("Найти", async () => {
-        setStatus(`Применяю фильтр «${filter.title}»…`);
-        const response = await send({ type: "filters:search", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 });
-        activatePanel("related"); renderResults(response.result); setStatus(`Найдено событий: ${response.result.events.length}`);
-      }),
-      button("SQL", async () => { const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: 250 }); await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован"); }),
-      button("Открыть в KUMA", async () => { await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, rangeSeconds: Number($("#range").value), limit: 250 }); setStatus("Фильтр передан в новую вкладку KUMA"); }),
-    );
+  const select = $("#useful-filter"); select.replaceChildren(); state.filters = [];
+  if (!state.context?.event) {
+    select.disabled = true;
+    $("#filter-description").textContent = "Нужны структурированные поля текущего события.";
+    previewFilter();
+    return;
   }
+  const response = await send({ type: "filters:list", event: state.context.event });
+  state.filters = response.filters.sort((a, b) => Number(b.applicable) - Number(a.applicable) || a.title.localeCompare(b.title, "ru"));
+  for (const filter of state.filters) {
+    const missing = filter.missing?.length ? ` — нет полей: ${filter.missing.join(", ")}` : "";
+    const option = new Option(`${filter.title}${missing}`, filter.id);
+    option.disabled = !filter.applicable;
+    select.add(option);
+  }
+  select.disabled = !state.filters.length;
+  previewFilter();
+}
+
+function selectedFilter() { return state.filters.find((filter) => filter.id === $("#useful-filter").value) || null; }
+
+function previewFilter() {
+  const filter = selectedFilter();
+  const graph = filter?.type === "processGraph";
+  $("#filter-description").textContent = filter ? `${filter.description} Диапазон: ±${filter.timeRange}.` : "Нет доступных фильтров.";
+  $("#filter-preview").textContent = filter?.applicable ? filter.preview : (filter?.reason || "Фильтр недоступен.");
+  $("#run-filter").hidden = graph;
+  $("#open-filter-graph").hidden = !graph;
+  for (const control of [$("#run-filter"), $("#open-filter-graph"), $("#copy-filter-sql"), $("#open-filter")]) control.disabled = !filter?.applicable;
+}
+
+async function withSelectedFilter(handler) {
+  const filter = selectedFilter();
+  if (!filter?.applicable) throw new Error("Выбранный фильтр неприменим к событию");
+  return handler(filter);
 }
 
 async function renderInvestigations() {
@@ -285,6 +296,24 @@ $("#load-rule").addEventListener("click", async () => {
     setStatus("Правило загружено");
   } catch (error) { setStatus(error.message, true); }
 });
+$("#useful-filter").addEventListener("change", previewFilter);
+$("#run-filter").addEventListener("click", () => withSelectedFilter(async (filter) => {
+  setStatus(`Применяю фильтр «${filter.title}»…`);
+  const response = await send({ type: "filters:search", filterId: filter.id, event: state.context.event, limit: 250 });
+  activatePanel("related"); renderResults(response.result); setStatus(`Найдено событий: ${response.result.events.length}`);
+}).catch((error) => setStatus(error.message, true)));
+$("#open-filter-graph").addEventListener("click", () => withSelectedFilter(async (filter) => {
+  await send({ type: "process:open-graph", event: state.context.event, rangeSeconds: filter.rangeSeconds, limit: 1000 });
+  setStatus("Граф процессов открыт");
+}).catch((error) => setStatus(error.message, true)));
+$("#copy-filter-sql").addEventListener("click", () => withSelectedFilter(async (filter) => {
+  const response = await send({ type: "filters:query", filterId: filter.id, event: state.context.event, limit: filter.type === "processGraph" ? 1000 : 250 });
+  await navigator.clipboard.writeText(response.query); setStatus("SQL скопирован");
+}).catch((error) => setStatus(error.message, true)));
+$("#open-filter").addEventListener("click", () => withSelectedFilter(async (filter) => {
+  await send({ type: "filters:open-tab", filterId: filter.id, event: state.context.event, limit: filter.type === "processGraph" ? 1000 : 250 });
+  setStatus("Фильтр передан в новую вкладку KUMA");
+}).catch((error) => setStatus(error.message, true)));
 
 initialize().catch((error) => setStatus(error.message, true));
 
