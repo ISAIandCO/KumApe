@@ -243,6 +243,15 @@ test("provider 404 is unknown, 429 is a rate limit, and malformed reports are er
   }
 });
 
+test("provider 401 distinguishes a rejected saved key from a missing key", async () => {
+  const app = background({ iocApiKeys: { virustotal: "  rejected-key  " } }, {}, async (_url, options) => {
+    assert.equal(options.headers["x-apikey"], "rejected-key");
+    return new Response("", { status: 401 });
+  });
+  const result = await app.message({ type: "ioc:lookup", provider: "virustotal", ioc: { type: "ip", value: "8.8.8.8" } });
+  assert.match(result.error, /Сохранённый ключ отклонён API провайдера/);
+});
+
 test("step mode queries selected relations, merges expansions and rejects foreign node IDs", async () => {
  const event=(id,pid,parent,time)=>({ID:id,DeviceEventClassID:'4688',DeviceEventCategory:'Microsoft-Windows-Security-Auditing',DeviceHostName:'pc',DeviceCustomString5:pid,DeviceCustomString3:parent,Timestamp:`2026-09-07T10:${time}:00Z`});
  const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');

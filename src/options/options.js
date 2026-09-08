@@ -190,19 +190,25 @@ async function renderIocSettings() {
     const input = document.createElement("input");
     input.type = "password";
     input.autocomplete = "off";
-    input.placeholder = iocApiKeys[id] ? "Ключ сохранён" : "Не сохранён";
+    const savedKeyLabel = (key) => key ? `Сохранён ключ …${String(key).trim().slice(-4)}` : "Не сохранён";
+    input.placeholder = savedKeyLabel(iocApiKeys[id]);
     label.append(input);
     const actions = document.createElement("div");
     actions.className = "actions";
     for (const [text, action] of [
-      ["Сохранить и выдать доступ", async () => {
+      ["Сохранить и проверить", async () => {
         if (!await browser.permissions.request({ origins: [`${provider.origin}/*`], data_collection: ["websiteContent", "authenticationInfo"] })) throw new Error("Firefox не выдал доступ");
         const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
         if (input.value.trim()) iocApiKeys[id] = input.value.trim();
         if (!iocApiKeys[id]) throw new Error("Введите API-ключ");
         await browser.storage.local.set({ iocApiKeys });
-        input.value = ""; input.placeholder = "Ключ сохранён";
-        return `${provider.name}: ключ сохранён`;
+        input.value = ""; input.placeholder = savedKeyLabel(iocApiKeys[id]);
+        try {
+          await send({ type: "ioc:lookup", provider: id, ioc: { type: "ip", value: "8.8.8.8" } });
+        } catch (error) {
+          throw new Error(`Ключ сохранён, но проверка не пройдена: ${error.message}`);
+        }
+        return `${provider.name}: ключ сохранён и принят API`;
       }],
       ["Удалить ключ", async () => {
         const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
