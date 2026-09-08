@@ -48,7 +48,15 @@
     <section id="ai" class="panel"><h2>SEC AI Assistant</h2><p class="hint">Чат с локальной моделью. Перед отправкой доступны состав контекста и режим приватности. Диалог сохраняется в отдельной вкладке.</p><button id="open-ai">Открыть чат с текущим событием</button></section>
     <section id="filters" class="panel">
       <div class="section-title"><h2>Полезные фильтры</h2><span class="hint">SQL строится из контекста события</span></div>
-      <div id="filter-list" class="card-list"></div>
+      <select id="useful-filter" aria-label="Полезный фильтр"></select>
+      <p id="filter-description" class="hint"></p>
+      <pre id="filter-preview">Выберите фильтр.</pre>
+      <div class="actions">
+        <button id="run-filter" type="button">Найти через API</button>
+        <button id="open-filter-graph" type="button" hidden>Открыть граф</button>
+        <button id="copy-filter-sql" type="button">Копировать SQL</button>
+        <button id="open-filter" type="button">Открыть в KUMA</button>
+      </div>
     </section>
 
     <section id="related" class="panel">

@@ -8,6 +8,7 @@ const DEFAULT_CONFIG = Object.freeze({
   clusterId: "",
   fieldProfiles: adapterApi.BUILTIN_FIELD_PROFILES,
   processMappings: processApi.BUILTIN_PROCESS_MAPPINGS,
+  usefulFilters: globalThis.KumApeFilters.BUILTIN_FILTERS,
   ai: { enabled: false, endpoint: "http://127.0.0.1:8080/v1", model: "local-model", privacyMode: "strict" },
 });
 const processGraphs = new Map();
@@ -153,7 +154,7 @@ async function safeRelatedAction(message) {
 
 async function safeFilter(message) {
   const config = await loadConfig();
-  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles, config.processMappings);
+  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles, config.processMappings, config.usefulFilters);
   if (!filter) throw new Error("Фильтр неприменим к текущему событию");
   return filter;
 }
@@ -373,7 +374,8 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         return { ok: true, result: await openKumaSearchTab(message, await safeRelatedAction(message)) };
       case "filters:list": {
         const config = await loadConfig();
-        return { ok: true, filters: globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles, config.processMappings).map(({ where, ...filter }) => filter) };
+        const filters = globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles, config.processMappings, config.usefulFilters);
+        return { ok: true, filters: filters.map(({ where, ...filter }) => ({ ...filter, ...(where ? { preview: where } : {}) })) };
       }
       case "filters:query": {
         const filter = await safeFilter(message);
@@ -381,10 +383,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       }
       case "filters:search": {
         const filter = await safeFilter(message);
-        return { ok: true, result: await (await adapter()).searchRelated(filter, message.event, message.rangeSeconds, message.limit) };
+        return { ok: true, result: await (await adapter()).searchRelated(filter, message.event, filter.rangeSeconds, message.limit) };
       }
-      case "filters:open-tab":
-        return { ok: true, result: await openKumaSearchTab(message, await safeFilter(message)) };
+      case "filters:open-tab": {
+        const filter = await safeFilter(message);
+        return { ok: true, result: await openKumaSearchTab({ ...message, rangeSeconds: filter.rangeSeconds }, filter) };
+      }
       case "process:open-graph":
         return { ok: true, result: await openProcessGraph(message) };
       case "process:request:run":
