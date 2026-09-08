@@ -19,3 +19,10 @@ article time { opacity: .65; } article details pre { max-height: 360px; overflow
 .toolbar details label {display:block;}
 
 #detail table {width:100%;border-collapse:collapse;} #detail th,#detail td {padding:7px;border:1px solid color-mix(in srgb,CanvasText 18%,transparent);text-align:left;overflow-wrap:anywhere;}
+
+/* Palette and chat cards aligned with ApePatrol. */
+body { background:#f6f5fa; color:#272233; } header, aside, article { background:#fff; } button,input,select,textarea {border:1px solid #cfcbdc;border-radius:7px;padding:8px 10px;color:inherit;background:#fff;} button:hover {border-color:#665cc7;color:#5549bd;}
+.ai-chat {display:block; margin-top:16px;} .chat-messages {display:grid;gap:8px;max-height:460px;overflow:auto;margin:10px 0;} .chat-messages article {padding:10px 12px;border:1px solid #dedbe8;border-radius:9px;} .chat-messages .assistant {border-color:#8d85d1;} .ai-chat textarea {width:100%;min-height:90px;} .ai-chat pre {max-height:400px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;} .ai-chat .toolbar {display:flex;gap:8px;flex-wrap:wrap;}
+@media(prefers-color-scheme:dark) {body {background:#17151e;color:#f2effb;} header,aside,article {background:#211e2a;} button,input,select,textarea {background:#2a2635;border-color:#494358;}}
+
+aside > input, aside > select {width:100%;margin-bottom:8px;} #detail {max-width:1500px;} .entity-graph {height:min(620px,62vh);min-height:360px;background:radial-gradient(circle at center,#fff 0,#f7f5fb 100%);} .timeline article {border-radius:10px;padding:12px;} .timeline h3 {font-size:15px;} #detail > h2 {margin-top:18px;} .ai-chat .markdown-body strong {display:inline;} .ai-chat .markdown-body table {font-size:12px;} @media(prefers-color-scheme:dark){.entity-graph {background:radial-gradient(circle at center,#25212f 0,#17151e 100%);}}

@@ -45,7 +45,7 @@
     </section>
 
     <section id="process" class="panel"><h2>Контекст процесса</h2><p class="hint">Граф продолжает работать после закрытия popup. ПКМ закрепляет карточку процесса; в пошаговом режиме из неё можно искать родителя и дочерние процессы.</p><div class="actions"><button data-graph="force">Граф связей</button><button data-graph="timeline">По времени</button><button data-graph="step">Пошаговый</button></div></section>
-    <section id="ai" class="panel"><h2>SEC AI Assistant</h2><p class="hint">Чат с локальной моделью. Перед отправкой доступны состав контекста и режим приватности. Диалог сохраняется в отдельной вкладке.</p><button id="open-ai">Открыть чат с текущим событием</button></section>
+    <section id="ai" class="panel"><h2>SEC AI Assistant</h2><p class="hint">Чат с локальной моделью. Перед отправкой доступны состав контекста и режим приватности. Диалог сохраняется в отдельной вкладке.</p><div id="popup-chat"></div><button id="open-ai">Открыть чат с текущим событием</button></section>
     <section id="filters" class="panel">
       <div class="section-title"><h2>Полезные фильтры</h2><span class="hint">SQL строится из контекста события</span></div>
       <select id="useful-filter" aria-label="Полезный фильтр"></select>

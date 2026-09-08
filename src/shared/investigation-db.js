@@ -142,6 +142,16 @@
     return items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
 
+  async function removeItem(investigationId, id) {
+    const db = await open();
+    const tx = db.transaction("items", "readwrite");
+    const store = tx.objectStore("items");
+    const item = await done(store.get(id));
+    if (item?.investigationId === investigationId) store.delete(id);
+    await transactionDone(tx); db.close();
+    await updateInvestigation(investigationId, {});
+  }
+
   async function deleteInvestigation(id) {
     const db = await open();
     const tx = db.transaction(["items", "investigations"], "readwrite");
@@ -162,5 +172,5 @@
     return `${lines.join("\n")}\n`;
   }
 
-  global.KumApeInvestigations = Object.freeze({ addEvent, createInvestigation, deleteInvestigation, describeEvent, entityKeys, getInvestigation, listInvestigations, listItems, open, toMarkdown, updateInvestigation });
+  global.KumApeInvestigations = Object.freeze({ addEvent, createInvestigation, deleteInvestigation, describeEvent, entityKeys, getInvestigation, listInvestigations, listItems, removeItem, open, toMarkdown, updateInvestigation });
 })(globalThis);
