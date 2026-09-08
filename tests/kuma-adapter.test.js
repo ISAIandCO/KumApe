@@ -87,6 +87,18 @@ test("builds a bounded ISO period around the event", () => {
   });
 });
 
+test("builds the native threat-hunting URI with the KUMA search payload", () => {
+  const sql = "SELECT * FROM `events` WHERE DeviceProduct = 'netflow' ORDER BY Timestamp DESC LIMIT 250";
+  const url = new URL(api.threatHuntingUrl("https://kuma.example.local:7220", sql, 300));
+  assert.equal(url.pathname, "/threat-hunting");
+  assert.match(url.hash, /^#\/threat-hunting\?search=%257B%2522sql%2522%253A/);
+  const encoded = new URLSearchParams(url.hash.split("?")[1]).get("search");
+  assert.deepEqual(JSON.parse(decodeURIComponent(encoded)), {
+    sql,
+    period: { relative: "now-5m", relativeTo: "now" },
+  });
+});
+
 test("normalizes common cluster and event response envelopes", () => {
   assert.deepEqual(api.clustersFromResponse({ data: { clusters: [{ ID: "c1", Name: "Main" }] } })[0], {
     id: "c1",

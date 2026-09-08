@@ -5,6 +5,10 @@
   const processApi = global.KumApeProcess;
   const TIME_RANGES = Object.freeze({ "5m": 300, "15m": 900, "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000 });
   const PLACEHOLDER = /\$\{(@?[A-Za-z][A-Za-z0-9_]*)\}/g;
+  const RENDER_PLACEHOLDER = /('?)\$\{(@?[A-Za-z][A-Za-z0-9_]*)\}\1/g;
+  const INTEGER_FIELD = /^(?:BytesIn|BytesOut|DestinationPort|DestinationProcessID|DestinationTranslatedPort|DeviceProcessID|DeviceReceiptTime|EndTime|FileCreateTime|FileModificationTime|FileSize|OldFileCreateTime|OldFileModificationTime|OldFileSize|SourcePort|SourceProcessID|SourceTranslatedPort|StartTime|Timestamp|Type|BaseEventCount|DeviceDirection|DeviceCustom(?:Date|Number)\d+|Flex(?:Date|Number)\d+)$/i;
+  const FLOAT_FIELD = /^(?:DestinationLatitude|DestinationLongitude|DeviceLatitude|DeviceLongitude|SourceLatitude|SourceLongitude|DeviceCustomFloatingPoint\d+)$/i;
+  const NUMERIC_LITERAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
   const LOGICAL_FIELDS = new Set(["@ip", "@host", "@account", "@process", "@command", "@file", "@hash", "@domain", "@url"]);
   const RESERVED_IDS = new Set(["process-relatives"]);
 
@@ -23,10 +27,10 @@
     { id: "destination-ip", name: "Активность целевого IP", description: "Ищет IP назначения с обеих сторон соединения.", template: "SourceAddress = '${DestinationAddress}' OR DestinationAddress = '${DestinationAddress}'", timeRange: "24h", enabled: true },
     { id: "device-ip", name: "Активность IP устройства", description: "Ищет адрес устройства в основных IP-полях.", template: "DeviceAddress = '${DeviceAddress}' OR SourceAddress = '${DeviceAddress}' OR DestinationAddress = '${DeviceAddress}'", timeRange: "24h", enabled: true },
     { id: "ip-pair", name: "Связь между двумя IP", description: "Ищет обмен между src и dst в обоих направлениях.", template: "(SourceAddress = '${SourceAddress}' AND DestinationAddress = '${DestinationAddress}') OR (SourceAddress = '${DestinationAddress}' AND DestinationAddress = '${SourceAddress}')", timeRange: "24h", enabled: true },
-    { id: "source-ip-destination-port", name: "Исходный IP и порт назначения", description: "Сужает поиск до текущего источника и целевого порта.", template: "SourceAddress = '${SourceAddress}' AND DestinationPort = '${DestinationPort}'", timeRange: "24h", enabled: true },
-    { id: "source-port", name: "Исходный порт", description: "Ищет события с тем же исходным портом.", template: "SourcePort = '${SourcePort}'", timeRange: "24h", enabled: true },
-    { id: "destination-port", name: "Порт назначения", description: "Ищет события с тем же портом назначения.", template: "DestinationPort = '${DestinationPort}'", timeRange: "24h", enabled: true },
-    { id: "network-flow", name: "Точный сетевой поток", description: "Ищет совпадение IP, портов и протокола.", template: "SourceAddress = '${SourceAddress}' AND SourcePort = '${SourcePort}' AND DestinationAddress = '${DestinationAddress}' AND DestinationPort = '${DestinationPort}' AND TransportProtocol = '${TransportProtocol}'", timeRange: "1h", enabled: true },
+    { id: "source-ip-destination-port", name: "Исходный IP и порт назначения", description: "Сужает поиск до текущего источника и целевого порта.", template: "SourceAddress = '${SourceAddress}' AND DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: true },
+    { id: "source-port", name: "Исходный порт", description: "Ищет события с тем же исходным портом.", template: "SourcePort = ${SourcePort}", timeRange: "24h", enabled: true },
+    { id: "destination-port", name: "Порт назначения", description: "Ищет события с тем же портом назначения.", template: "DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: true },
+    { id: "network-flow", name: "Точный сетевой поток", description: "Ищет совпадение IP, портов и протокола.", template: "SourceAddress = '${SourceAddress}' AND SourcePort = ${SourcePort} AND DestinationAddress = '${DestinationAddress}' AND DestinationPort = ${DestinationPort} AND TransportProtocol = '${TransportProtocol}'", timeRange: "1h", enabled: true },
     { id: "protocol-host", name: "Тот же протокол на узле", description: "Ищет события протокола на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND TransportProtocol = '${TransportProtocol}'", timeRange: "24h", enabled: true },
     { id: "application-protocol", name: "Тот же прикладной протокол", description: "Ищет события с текущим ApplicationProtocol.", template: "ApplicationProtocol = '${ApplicationProtocol}'", timeRange: "24h", enabled: true },
     { id: "source-hostname", name: "Активность исходного имени узла", description: "Ищет текущее SourceHostName.", template: "SourceHostName = '${SourceHostName}'", timeRange: "7d", enabled: true },
@@ -35,19 +39,19 @@
     { id: "destination-domain", name: "Активность домена назначения", description: "Ищет DestinationDnsDomain.", template: "DestinationDnsDomain = '${DestinationDnsDomain}'", timeRange: "7d", enabled: true },
     { id: "source-mac", name: "Активность исходного MAC", description: "Ищет события с тем же MAC-адресом источника.", template: "SourceMacAddress = '${SourceMacAddress}'", timeRange: "7d", enabled: true },
     { id: "destination-mac", name: "Активность MAC назначения", description: "Ищет события с тем же MAC-адресом назначения.", template: "DestinationMacAddress = '${DestinationMacAddress}'", timeRange: "7d", enabled: true },
-    { id: "auth-failures", name: "Неуспешные входы", description: "Ищет ошибки входа для текущей учётной записи.", template: "${@account} AND (DeviceEventClassID = '4625' OR DeviceEventClassID = '4771' OR DeviceEventClassID = '4776' OR DeviceEventClassID = 'USER_AUTH' OR DeviceEventClassID = 'USER_LOGIN')", timeRange: "24h", enabled: true },
-    { id: "auth-by-ip", name: "Аутентификация с IP", description: "Ищет попытки входа с текущего адреса.", template: "${@ip} AND (DeviceEventClassID = '4624' OR DeviceEventClassID = '4625' OR DeviceEventClassID = '4648' OR DeviceEventClassID = '4771' OR DeviceEventClassID = '4776' OR DeviceEventClassID = 'USER_AUTH' OR DeviceEventClassID = 'USER_LOGIN')", timeRange: "24h", enabled: true },
-    { id: "process-on-host", name: "Запуски процессов на узле", description: "Ищет Windows 4688, Sysmon 1 и Linux EXECVE на текущем узле.", template: "${@host} AND (DeviceEventClassID = '4688' OR DeviceEventClassID = '1' OR DeviceEventClassID = 'EXECVE')", timeRange: "1h", enabled: true },
+    { id: "auth-failures", name: "Неуспешные входы", description: "Ищет ошибки входа для текущей учётной записи.", template: "${@account} AND DeviceEventClassID IN ('4625', '4771', '4776', 'USER_AUTH', 'USER_LOGIN')", timeRange: "24h", enabled: true },
+    { id: "auth-by-ip", name: "Аутентификация с IP", description: "Ищет попытки входа с текущего адреса.", template: "${@ip} AND DeviceEventClassID IN ('4624', '4625', '4648', '4771', '4776', 'USER_AUTH', 'USER_LOGIN')", timeRange: "24h", enabled: true },
+    { id: "process-on-host", name: "Запуски процессов на узле", description: "Ищет Windows 4688, Sysmon 1 и Linux EXECVE на текущем узле.", template: "${@host} AND DeviceEventClassID IN ('4688', '1', 'EXECVE')", timeRange: "1h", enabled: true },
     { id: "destination-process-host", name: "Процесс с таким именем на узле", description: "Ищет имя целевого процесса во всех основных процессных полях.", template: "DeviceHostName = '${DeviceHostName}' AND (DestinationProcessName = '${DestinationProcessName}' OR SourceProcessName = '${DestinationProcessName}' OR DeviceProcessName = '${DestinationProcessName}')", timeRange: "7d", enabled: true },
     { id: "device-process-host", name: "DeviceProcessName на узле", description: "Ищет основной процесс нормализатора на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DestinationProcessName = '${DeviceProcessName}' OR SourceProcessName = '${DeviceProcessName}' OR DeviceProcessName = '${DeviceProcessName}')", timeRange: "7d", enabled: true },
     { id: "source-process-host", name: "Исходный процесс на узле", description: "Ищет SourceProcessName во всех основных процессных полях.", template: "DeviceHostName = '${DeviceHostName}' AND (DestinationProcessName = '${SourceProcessName}' OR SourceProcessName = '${SourceProcessName}' OR DeviceProcessName = '${SourceProcessName}')", timeRange: "7d", enabled: true },
-    { id: "device-pid-host", name: "Device PID на узле", description: "Ищет PID процесса только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = '${DeviceProcessID}' OR DestinationProcessID = '${DeviceProcessID}' OR SourceProcessID = '${DeviceProcessID}')", timeRange: "1h", enabled: true },
-    { id: "destination-pid-host", name: "Destination PID на узле", description: "Ищет целевой PID только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = '${DestinationProcessID}' OR DestinationProcessID = '${DestinationProcessID}' OR SourceProcessID = '${DestinationProcessID}')", timeRange: "1h", enabled: true },
-    { id: "children-by-pid", name: "Дочерние процессы по PID", description: "Ищет процессы, у которых PID текущего процесса указан как родительский.", template: "DeviceHostName = '${DeviceHostName}' AND SourceProcessID = '${DestinationProcessID}'", timeRange: "1h", enabled: true },
+    { id: "device-pid-host", name: "Device PID на узле", description: "Ищет PID процесса только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DeviceProcessID} OR DestinationProcessID = ${DeviceProcessID} OR SourceProcessID = ${DeviceProcessID})", timeRange: "1h", enabled: true },
+    { id: "destination-pid-host", name: "Destination PID на узле", description: "Ищет целевой PID только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DestinationProcessID} OR DestinationProcessID = ${DestinationProcessID} OR SourceProcessID = ${DestinationProcessID})", timeRange: "1h", enabled: true },
+    { id: "children-by-pid", name: "Дочерние процессы по PID", description: "Ищет процессы, у которых PID текущего процесса указан как родительский.", template: "DeviceHostName = '${DeviceHostName}' AND SourceProcessID = ${DestinationProcessID}", timeRange: "1h", enabled: true },
     { id: "command-line-4688", name: "Та же командная строка 4688", description: "Ищет точное совпадение DeviceCustomString4.", template: "DeviceCustomString4 = '${DeviceCustomString4}'", timeRange: "7d", enabled: true },
-    { id: "powershell-host", name: "PowerShell на узле", description: "Ищет Script Block 4104 и запуски PowerShell.", template: "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName = 'powershell.exe' OR DestinationProcessName = 'powershell.exe')", timeRange: "24h", enabled: true },
-    { id: "service-install-host", name: "Установка служб на узле", description: "Ищет Windows 4697 и 7045.", template: "${@host} AND (DeviceEventClassID = '4697' OR DeviceEventClassID = '7045')", timeRange: "7d", enabled: true },
-    { id: "network-by-process", name: "Сеть текущего процесса", description: "Ищет Sysmon 3 и Windows Filtering Platform 5156/5157 для текущего процесса.", template: "${@process} AND ${@host} AND (DeviceEventClassID = '3' OR DeviceEventClassID = '5156' OR DeviceEventClassID = '5157')", timeRange: "1h", enabled: true },
+    { id: "powershell-host", name: "PowerShell на узле", description: "Ищет Script Block 4104 и запуски PowerShell без учёта регистра и пути.", template: "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName ILIKE '%powershell.exe' OR DestinationProcessName ILIKE '%powershell.exe')", timeRange: "24h", enabled: true },
+    { id: "service-install-host", name: "Установка служб на узле", description: "Ищет Windows 4697 и 7045.", template: "${@host} AND DeviceEventClassID IN ('4697', '7045')", timeRange: "7d", enabled: true },
+    { id: "network-by-process", name: "Сеть текущего процесса", description: "Ищет Sysmon 3 и Windows Filtering Platform 5156/5157 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID IN ('3', '5156', '5157')", timeRange: "1h", enabled: true },
     { id: "dns-by-process", name: "DNS текущего процесса", description: "Ищет Sysmon DNS Query 22 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
     { id: "dns-query-host", name: "DNS-запросы на узле", description: "Ищет Sysmon DNS Query 22.", template: "${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
     { id: "file-path-host", name: "Файл по полному пути на узле", description: "Ищет текущий FilePath на выбранном узле.", template: "DeviceHostName = '${DeviceHostName}' AND FilePath = '${FilePath}'", timeRange: "7d", enabled: true },
@@ -68,6 +72,30 @@
     { id: "severity", name: "События той же критичности", description: "Ищет события с текущим Severity.", template: "Severity = '${Severity}'", timeRange: "24h", enabled: true },
     { id: "external-id", name: "События с тем же внешним ID", description: "Ищет DeviceExternalID.", template: "DeviceExternalID = '${DeviceExternalID}'", timeRange: "24h", enabled: true },
   ].map(Object.freeze));
+
+  const LEGACY_BUILTIN_TEMPLATES = Object.freeze({
+    "source-ip-destination-port": "SourceAddress = '${SourceAddress}' AND DestinationPort = '${DestinationPort}'",
+    "source-port": "SourcePort = '${SourcePort}'",
+    "destination-port": "DestinationPort = '${DestinationPort}'",
+    "network-flow": "SourceAddress = '${SourceAddress}' AND SourcePort = '${SourcePort}' AND DestinationAddress = '${DestinationAddress}' AND DestinationPort = '${DestinationPort}' AND TransportProtocol = '${TransportProtocol}'",
+    "auth-failures": "${@account} AND (DeviceEventClassID = '4625' OR DeviceEventClassID = '4771' OR DeviceEventClassID = '4776' OR DeviceEventClassID = 'USER_AUTH' OR DeviceEventClassID = 'USER_LOGIN')",
+    "auth-by-ip": "${@ip} AND (DeviceEventClassID = '4624' OR DeviceEventClassID = '4625' OR DeviceEventClassID = '4648' OR DeviceEventClassID = '4771' OR DeviceEventClassID = '4776' OR DeviceEventClassID = 'USER_AUTH' OR DeviceEventClassID = 'USER_LOGIN')",
+    "process-on-host": "${@host} AND (DeviceEventClassID = '4688' OR DeviceEventClassID = '1' OR DeviceEventClassID = 'EXECVE')",
+    "device-pid-host": "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = '${DeviceProcessID}' OR DestinationProcessID = '${DeviceProcessID}' OR SourceProcessID = '${DeviceProcessID}')",
+    "destination-pid-host": "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = '${DestinationProcessID}' OR DestinationProcessID = '${DestinationProcessID}' OR SourceProcessID = '${DestinationProcessID}')",
+    "children-by-pid": "DeviceHostName = '${DeviceHostName}' AND SourceProcessID = '${DestinationProcessID}'",
+    "powershell-host": "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName = 'powershell.exe' OR DestinationProcessName = 'powershell.exe')",
+    "service-install-host": "${@host} AND (DeviceEventClassID = '4697' OR DeviceEventClassID = '7045')",
+    "network-by-process": "${@process} AND ${@host} AND (DeviceEventClassID = '3' OR DeviceEventClassID = '5156' OR DeviceEventClassID = '5157')",
+  });
+
+  function migrateBuiltinFilters(filters) {
+    if (!Array.isArray(filters)) return filters;
+    const current = new Map(BUILTIN_FILTERS.map((filter) => [filter.id, filter.template]));
+    return filters.map((filter) => filter && filter.template === LEGACY_BUILTIN_TEMPLATES[filter.id]
+      ? { ...filter, template: current.get(filter.id) }
+      : filter);
+  }
 
   function requiredTemplateFields(template) {
     return [...new Set([...String(template).matchAll(PLACEHOLDER)].map((match) => match[1]))];
@@ -111,7 +139,11 @@
     const fields = requiredTemplateFields(template);
     const groups = new Map(api.fieldGroupsForEvent(event, profiles).map((group) => [group.kind, group]));
     const values = new Map(fields.map((field) => {
-      if (!field.startsWith("@")) return [field, api.valuesForAliases(event, [field])[0] || ""];
+      if (!field.startsWith("@")) {
+        const value = api.valuesForAliases(event, [field])[0] || "";
+        if ((INTEGER_FIELD.test(field) || FLOAT_FIELD.test(field)) && (!NUMERIC_LITERAL.test(value) || INTEGER_FIELD.test(field) && !/^[+-]?\d+$/.test(value))) return [field, ""];
+        return [field, value];
+      }
       const group = groups.get(field.slice(1));
       const value = api.valuesForAliases(event, group?.aliases || [])[0] || "";
       return [field, value ? api.equalityWhere(group.queryFields, value) : ""];
@@ -122,11 +154,10 @@
       return group?.aliases?.join(" / ") || field;
     });
     if (missing.length) return { ok: false, missing, where: null };
-    const where = String(template).replace(PLACEHOLDER, (match, field, offset, source) => {
+    const where = String(template).replace(RENDER_PLACEHOLDER, (match, quote, field) => {
       if (field.startsWith("@")) return `(${values.get(field)})`;
-      const value = api.escapeSqlString(values.get(field));
-      const alreadyQuoted = source[offset - 1] === "'" && source[offset + match.length] === "'";
-      return alreadyQuoted ? value : `'${value}'`;
+      if (INTEGER_FIELD.test(field) || FLOAT_FIELD.test(field)) return values.get(field);
+      return `'${api.escapeSqlString(values.get(field))}'`;
     });
     return { ok: true, missing: [], where };
   }
@@ -159,5 +190,5 @@
     return buildUsefulFilters(event, profiles, processMappings, filterTemplates).find((filter) => filter.id === id && filter.applicable) || null;
   }
 
-  global.KumApeFilters = Object.freeze({ BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
+  global.KumApeFilters = Object.freeze({ BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
 })(globalThis);

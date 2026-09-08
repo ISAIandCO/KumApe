@@ -117,6 +117,7 @@
   }
 
   function extractPageContext(documentObject = document, urlValue = location.href) {
+    const route = routeContext(urlValue);
     const roots = collectOpenRoots(documentObject);
     const candidates = roots.flatMap((root) => [
       ...extractFromTextNodes(root),
@@ -127,11 +128,14 @@
     const best = candidates[0] || null;
     const raw = roots.map(findRawText).find(Boolean) || best?.raw || null;
     const title = documentObject.title || "";
+    const event = best?.event && route.eventId && !Object.keys(best.event).some((field) => field.toLowerCase() === "id")
+      ? { ...best.event, ID: route.eventId }
+      : best?.event || null;
     return {
-      ...routeContext(urlValue),
+      ...route,
       title,
       isKuma: /\bKUMA\b/i.test(title) || /\bKUMA\b/i.test(documentObject.body?.innerText?.slice(0, 2000) || ""),
-      event: best?.event || null,
+      event,
       raw,
       source: best?.source || (raw ? "raw-pre" : null),
       score: best?.score || 0,

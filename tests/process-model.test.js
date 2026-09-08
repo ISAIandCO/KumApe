@@ -65,3 +65,14 @@ test("step graph excludes unrelated candidates, other hosts, and later PID reuse
   const action=model.relatedAction(child,[mapping],'parents');
   assert.match(action.where,/HostX = 'pc'/);assert.match(action.where,/PidX = '10'/);assert.doesNotMatch(action.where,/ParentX = '20'/);
 });
+
+test("step queries use numeric literals for KUMA process ID fields and keep hex variants for strings", () => {
+  const model = api();
+  const source = { DeviceEventClassID: "4688", DeviceHostName: "pc", DeviceCustomString5: "0x14", DeviceCustomString3: "0x0a" };
+  const action = model.relatedAction(source, model.BUILTIN_PROCESS_MAPPINGS, "both");
+  assert.match(action.where, /DeviceCustomString5 = '10'/);
+  assert.match(action.where, /DeviceCustomString5 = '0xa'/);
+  assert.match(action.where, /DestinationProcessID = 10/);
+  assert.match(action.where, /SourceProcessID = 20/);
+  assert.doesNotMatch(action.where, /(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
+});
