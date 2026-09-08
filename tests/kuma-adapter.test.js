@@ -10,6 +10,13 @@ test("normalizes KUMA origins without credentials or paths", () => {
   assert.throws(() => api.normalizeOrigin("https://user:pass@kuma.example.local"));
 });
 
+test("recognizes loopback and private-network AI hosts", () => {
+  for (const host of ["localhost", "127.0.0.1", "10.20.30.40", "172.16.0.1", "172.31.255.254", "192.168.1.10", "[::1]", "[fd00::10]", "model.local", "ollama"]) {
+    assert.equal(api.isLocalNetworkHost(host), true, host);
+  }
+  for (const host of ["8.8.8.8", "172.32.0.1", "example.org", "[2001:4860:4860::8888]"]) assert.equal(api.isLocalNetworkHost(host), false, host);
+});
+
 test("escapes SQL values and rejects statement chaining", () => {
   assert.equal(api.escapeSqlString("o'hara\\host"), "o\\'hara\\\\host");
   assert.equal(

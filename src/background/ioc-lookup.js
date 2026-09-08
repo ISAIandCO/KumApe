@@ -6,7 +6,7 @@
     const ioc = global.KumApeIoc.validateIoc(input);
     if (!provider?.types.includes(ioc.type)) throw new Error("Провайдер не поддерживает этот тип IOC");
     const { iocApiKeys = {} } = await browser.storage.local.get("iocApiKeys");
-    const key = iocApiKeys[providerId];
+    const key = typeof iocApiKeys[providerId] === "string" ? iocApiKeys[providerId].trim() : "";
     if (!key) throw new Error(`${provider.name}: добавьте API-ключ в настройках KumApe`);
     if (!await browser.permissions.contains({ origins: [`${provider.origin}/*`], data_collection: ["websiteContent", "authenticationInfo"] })) {
       throw new Error(`${provider.name}: сохраните ключ заново, чтобы выдать доступ Firefox`);
@@ -41,7 +41,8 @@
       if (response.status === 404) return { provider: provider.name, summary: "Отчёт не найден. Это не означает, что IOC безопасен." };
       if (!response.ok) {
         const hint = response.status === 429 ? "Лимит запросов; повторите позже."
-          : [401, 403].includes(response.status) ? "Проверьте ключ и права API провайдера." : "Не удалось получить отчёт.";
+          : response.status === 401 ? "Сохранённый ключ отклонён API провайдера. Пересохраните personal API key из профиля провайдера."
+            : response.status === 403 ? "Сохранённый ключ не даёт доступа к этому API." : "Не удалось получить отчёт.";
         throw new Error(`${provider.name}: HTTP ${response.status}. ${hint}`);
       }
       const body = await response.json();

@@ -166,7 +166,9 @@ test("local AI keeps event data out of URLs and sends only the prepared payload"
   assert.doesNotMatch(JSON.stringify(body), /SECRET-RAW|SECRET-COOKIE/);
 });
 
-test("local AI rejects non-loopback endpoints before network access", async () => {
+test("local AI accepts LAN endpoints and rejects public endpoints before network access", async () => {
+  const lan = background({ ai: { enabled: true, endpoint: "http://192.168.1.10:8080/v1", model: "x", privacyMode: "strict" } });
+  assert.equal((await lan.message({ type: "ai:open", event: { DeviceHostName: "host01" } })).ok, true);
   const app = background({ ai: { enabled: true, endpoint: "https://example.org/v1", model: "x", privacyMode: "strict" } });
   const response = await app.message({ type: "ai:open", event: { DeviceHostName: "host01" } });
   assert.equal(response.ok, false);
@@ -241,6 +243,15 @@ test("provider 404 is unknown, 429 is a rate limit, and malformed reports are er
     const result = await app.message({ type: "ioc:lookup", provider: "virustotal", ioc: { type: "ip", value: "8.8.8.8" } });
     assert.match(result.error || result.result.summary, expected);
   }
+});
+
+test("provider 401 distinguishes a rejected saved key from a missing key", async () => {
+  const app = background({ iocApiKeys: { virustotal: "  rejected-key  " } }, {}, async (_url, options) => {
+    assert.equal(options.headers["x-apikey"], "rejected-key");
+    return new Response("", { status: 401 });
+  });
+  const result = await app.message({ type: "ioc:lookup", provider: "virustotal", ioc: { type: "ip", value: "8.8.8.8" } });
+  assert.match(result.error, /Сохранённый ключ отклонён API провайдера/);
 });
 
 test("step mode queries selected relations, merges expansions and rejects foreign node IDs", async () => {

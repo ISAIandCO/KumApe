@@ -260,6 +260,22 @@
     return url.origin;
   }
 
+  function isLocalNetworkHost(value) {
+    const host = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host) return false;
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa")) return true;
+    const ipv4 = host.split(".");
+    if (ipv4.length === 4 && ipv4.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) {
+      const [first, second] = ipv4.map(Number);
+      return first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+    }
+    if (host.includes(":")) {
+      const first = Number.parseInt(host.split(":")[0], 16);
+      return host === "::1" || (first >= 0xfc00 && first <= 0xfdff) || (first >= 0xfe80 && first <= 0xfebf);
+    }
+    return !host.includes(".");
+  }
+
   function flattenObject(value, prefix = "", output = {}) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return output;
     for (const [key, item] of Object.entries(value)) {
@@ -615,6 +631,7 @@
     iocLinks,
     iocType,
     iocsFromEvent,
+    isLocalNetworkHost,
     normalizeOrigin,
     normalizeFieldProfiles,
     sqlIdentifier,

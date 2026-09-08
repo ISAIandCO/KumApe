@@ -248,8 +248,8 @@ async function storedRequest(prefix, id) {
 
 function aiEndpoint(config) {
   const url = new URL(config.ai?.endpoint || "");
-  if (!/^https?:$/.test(url.protocol) || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
-    throw new Error("Локальный AI endpoint должен использовать localhost, 127.0.0.1 или [::1]");
+  if (!/^https?:$/.test(url.protocol) || !adapterApi.isLocalNetworkHost(url.hostname)) {
+    throw new Error("AI endpoint должен находиться на этом компьютере или в локальной сети");
   }
   return url;
 }
