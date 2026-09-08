@@ -35,6 +35,16 @@ test("GUID relationship takes precedence over a reused PID", () => {
   assert.ok(graph.edges.some((edge) => edge.source.includes("parent-guid") && edge.target.includes("child-guid")));
 });
 
+test("graph removes duplicate KUMA IDs and correlation events", () => {
+  const source = event("source", "20", "10", "2026-09-07T10:01:00Z", "pc", { ID: "source-id" });
+  const first = event("first", "30", "20", "2026-09-07T10:02:00Z", "pc", { ID: "duplicate-id", GuidX: "guid-a" });
+  const duplicate = event("duplicate", "31", "20", "2026-09-07T10:02:01Z", "pc", { ID: "duplicate-id", GuidX: "guid-b" });
+  const correlation = event("correlation", "40", "20", "2026-09-07T10:03:00Z", "pc", { ID: "correlation-id", Type: 3 });
+  const graph = api().buildGraph([source, first, duplicate, correlation], source, [mapping]);
+  assert.deepEqual([...graph.nodes.map((node) => node.event.ID)].sort(), ["duplicate-id", "source-id"]);
+  assert.equal(api().mappingForEvent(correlation, [mapping]), null);
+});
+
 test("legacy Sysmon profile migrates by DeviceEventClassID rather than category", () => {
   const migrated = api().mappingsFromLegacyProfiles([{ name: "Sysmon", when: { DeviceEventCategory: ["Sysmon"], DeviceEventClassID: ["1"] }, processGraph: { host: ["HostX"], pid: ["PidX"], parentPid: ["ParentX"] } }]);
   assert.equal(migrated[0].eventIdField, "DeviceEventClassID");
