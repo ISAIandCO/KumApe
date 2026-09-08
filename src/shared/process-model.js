@@ -7,6 +7,7 @@
   const BUILTIN_PROCESS_MAPPINGS = Object.freeze([
     Object.freeze({
       name: "Windows Security 4688", eventIdField: "DeviceEventClassID", eventIdValue: "4688",
+      eventCategories: ["Microsoft-Windows-Security-Auditing"],
       host: "DeviceHostName", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3",
       fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID",
       processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "DeviceCustomString4",
@@ -14,6 +15,7 @@
     }),
     Object.freeze({
       name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1",
+      eventCategories: ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"],
       host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID",
       processGuid: "FlexString1", parentGuid: "FlexString2", image: "DeviceProcessName", commandLine: "DeviceCustomString2",
       user: "SourceUserName", eventRecordId: "ID",
@@ -47,7 +49,10 @@
         name: name.slice(0, 120),
         eventIdField: safeField(mapping.eventIdField, true, context),
         eventIdValue,
+        eventCategories: [...new Set((Array.isArray(mapping.eventCategories) ? mapping.eventCategories : String(mapping.eventCategories || "").split(","))
+          .map((value) => String(value).trim()).filter(Boolean))],
       };
+      if (normalized.eventCategories.length > 20 || normalized.eventCategories.some((value) => value.length > 256)) throw new TypeError(`${context}: слишком много или слишком длинные категории событий`);
       for (const key of FIELD_KEYS) normalized[key] = safeField(mapping[key], ["host", "pid", "parentPid"].includes(key), `${context}.${key}`);
       if (Boolean(normalized.fallbackPid) !== Boolean(normalized.fallbackParentPid)) throw new TypeError(`${context}: укажите оба резервных PID-поля`);
       return normalized;
@@ -55,7 +60,16 @@
   }
 
   function mappingMatches(event, mapping) {
-    return api.valuesForAliases(event, [mapping.eventIdField]).some((value) => value.toLowerCase() === mapping.eventIdValue.toLowerCase());
+    const eventIdMatches = api.valuesForAliases(event, [mapping.eventIdField]).some((value) => value.toLowerCase() === mapping.eventIdValue.toLowerCase());
+    return eventIdMatches && (!mapping.eventCategories.length || api.valuesForAliases(event, ["DeviceEventCategory"])
+      .some((value) => mapping.eventCategories.some((category) => value.toLowerCase() === category.toLowerCase())));
+  }
+
+  function mappingWhere(mapping) {
+    const predicates = [api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)];
+    if (mapping.eventCategories.length === 1) predicates.push(api.equalityWhere(["DeviceEventCategory"], mapping.eventCategories[0]));
+    if (mapping.eventCategories.length > 1) predicates.push(`DeviceEventCategory IN (${mapping.eventCategories.map((value) => `'${api.escapeSqlString(value)}'`).join(", ")})`);
+    return predicates.join(" AND ");
   }
 
   function mappingForEvent(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
@@ -91,7 +105,7 @@
     const source = processFields(event, sourceMapping);
     if (!source.host) throw new Error(`В поле ${sourceMapping.host} не найден узел процесса`);
     if (!source.pid) throw new Error(`В поле ${sourceMapping.pid} не найден PID процесса`);
-    const clauses = normalized.map((mapping) => `(${api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)} AND ${api.equalityWhere([mapping.host], source.host)})`);
+    const clauses = normalized.map((mapping) => `(${mappingWhere(mapping)} AND ${api.equalityWhere([mapping.host], source.host)})`);
     return { kind: "processGraph", title: "Граф процессов", value: source.pid, where: clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`, sourceMapping, source };
   }
 
@@ -160,7 +174,7 @@
         if (direction === "siblings" && source.parentPid) relations.push(eq(parent, source.parentPid));
       }
       const validRelations = relations.filter(Boolean);
-      if (validRelations.length) clauses.push(`(${api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${validRelations.join(" OR ")}))`);
+      if (validRelations.length) clauses.push(`(${mappingWhere(mapping)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${validRelations.join(" OR ")}))`);
     }
     if (!clauses.length) throw new Error("Нет полей для выбранного направления");
     return { where: `(${clauses.join(" OR ")})` };
@@ -187,6 +201,7 @@
         if (!eventIdField) continue;
         for (const eventIdValue of accepted) {
           const mapping = { name: profile.name, eventIdField, eventIdValue: String(eventIdValue) };
+          mapping.eventCategories = entries.find(([field, values]) => field.toLowerCase() === "deviceeventcategory" && Array.isArray(values))?.[1] || [];
           for (const key of FIELD_KEYS) mapping[key] = String(profile.processGraph[key]?.[0] || "");
           if (mapping.host && mapping.pid && mapping.parentPid) result.push(mapping);
         }

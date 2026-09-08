@@ -5,6 +5,7 @@ const api = globalThis.KumApeAdapter;
 const processApi = globalThis.KumApeProcess;
 const PROCESS_FIELDS = [
   ["eventIdField", "Поле Event ID", true], ["eventIdValue", "Значение Event ID", true],
+  ["eventCategories", "DeviceEventCategory (через запятую)", false],
   ["host", "Узел / host", true], ["pid", "PID процесса", true], ["parentPid", "PID родителя", true],
   ["fallbackPid", "Резервное поле PID", false], ["fallbackParentPid", "Резервное поле PID родителя", false],
   ["processGuid", "GUID процесса", false], ["parentGuid", "GUID родителя", false],
@@ -22,8 +23,8 @@ function mappingCard(mapping = {}) {
   const grid = document.createElement("div"); grid.className = "mapping-grid";
   for (const [key, title, required] of PROCESS_FIELDS) {
     const label = document.createElement("label"); label.textContent = title;
-    const input = document.createElement("input"); input.dataset.key = key; input.value = mapping[key] || ""; input.required = required;
-    input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3" }[key] || "Необязательно");
+    const input = document.createElement("input"); input.dataset.key = key; input.value = Array.isArray(mapping[key]) ? mapping[key].join(", ") : mapping[key] || ""; input.required = required;
+    input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", eventCategories: "Microsoft-Windows-Security-Auditing", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3" }[key] || "Необязательно");
     label.append(input); grid.append(label);
   }
   card.append(head, grid); return card;

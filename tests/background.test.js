@@ -104,6 +104,16 @@ test("legacy processGraph settings migrate to separate Event ID mappings", async
   assert.equal("processGraph" in local.fieldProfiles[0], false);
 });
 
+test("stored built-in process mappings gain categories without changing custom mappings", async () => {
+  const local = { processMappings: [
+    { name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
+    { name: "Custom", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
+  ] };
+  await background(local).message({ type: "config:get" });
+  assert.deepEqual([...local.processMappings[0].eventCategories], ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"]);
+  assert.equal(local.processMappings[1].eventCategories, undefined);
+});
+
 test("process graph request uses configured PID fields and opens graph page", async () => {
   const mappings = [{ name: "Custom", eventIdField: "DeviceEventClassID", eventIdValue: "4688", host: "HostX", pid: "DeviceCustomString3", parentPid: "DeviceCustomString5", processGuid: "", parentGuid: "", image: "ImageX", commandLine: "", user: "", eventRecordId: "ID" }];
   const session = {}; const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", processMappings: mappings }, session);
@@ -216,7 +226,7 @@ test("provider 404 is unknown, 429 is a rate limit, and malformed reports are er
 });
 
 test("step mode queries selected relations, merges expansions and rejects foreign node IDs", async () => {
- const event=(id,pid,parent,time)=>({ID:id,DeviceEventClassID:'4688',DeviceHostName:'pc',DeviceCustomString5:pid,DeviceCustomString3:parent,Timestamp:`2026-09-07T10:${time}:00Z`});
+ const event=(id,pid,parent,time)=>({ID:id,DeviceEventClassID:'4688',DeviceEventCategory:'Microsoft-Windows-Security-Auditing',DeviceHostName:'pc',DeviceCustomString5:pid,DeviceCustomString3:parent,Timestamp:`2026-09-07T10:${time}:00Z`});
  const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');
  let calls=0;
  const app=background({uiOrigin:'https://kuma.test',apiOrigin:'https://kuma.test:7223',clusterId:'c',apiToken:'synthetic'}, {}, async(url,options)=>{
@@ -235,12 +245,16 @@ test("step mode queries selected relations, merges expansions and rejects foreig
 test("graph nodes fall back to the universal KUMA ID when the mapped ID is unavailable", async () => {
  const mappings=[{name:"Custom",eventIdField:"DeviceEventClassID",eventIdValue:"4688",host:"HostX",pid:"PidX",parentPid:"ParentX",processGuid:"",parentGuid:"",image:"",commandLine:"",user:"",eventRecordId:"CustomEventId",fallbackPid:"",fallbackParentPid:""}];
  const session={};const app=background({uiOrigin:"https://kuma.test",apiOrigin:"https://kuma.test:7223",clusterId:"c",processMappings:mappings},session);
- const event={ID:"event-uuid",DeviceEventClassID:"4688",HostX:"pc",PidX:"20",ParentX:"10",Timestamp:"2026-09-07T10:01:00Z"};
+ const occurredAt=new Date(Date.now()-3600_000).toISOString();
+ const event={ID:"event-uuid",DeviceEventClassID:"4688",HostX:"pc",PidX:"20",ParentX:"10",Timestamp:occurredAt};
  const opened=await app.message({type:"process:event:open",event,rangeSeconds:900});
  assert.equal(opened.ok,true,opened.error);
  const url=new URL(app.createdTabs[0].url);
  const encoded=new URLSearchParams(url.hash.split("?")[1]).get("search");
- assert.match(JSON.parse(decodeURIComponent(encoded)).sql,/ID = 'event-uuid'/);
+ const payload=JSON.parse(decodeURIComponent(encoded));
+ assert.match(payload.sql,/ID = 'event-uuid'/);
+ assert.match(payload.sql,new RegExp(`Timestamp = ${Date.parse(occurredAt)}`));
+ assert.notEqual(payload.period.relative,"now-15m");
  assert.deepEqual(session,{});
 });
 
