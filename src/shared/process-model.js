@@ -60,6 +60,7 @@
   }
 
   function mappingMatches(event, mapping) {
+    if (api.valuesForAliases(event, ["Type"]).includes("3")) return false;
     const eventIdMatches = api.valuesForAliases(event, [mapping.eventIdField]).some((value) => value.toLowerCase() === mapping.eventIdValue.toLowerCase());
     return eventIdMatches && (!mapping.eventCategories.length || api.valuesForAliases(event, ["DeviceEventCategory"])
       .some((value) => mapping.eventCategories.some((category) => value.toLowerCase() === category.toLowerCase())));
@@ -120,14 +121,18 @@
     const combined = [sourceEvent, ...(Array.isArray(events) ? events : [])];
     const nodes = [];
     const keys = new Set();
+    const eventIds = new Set();
     for (const [index, event] of combined.entries()) {
       const mapping = normalized.find((candidate) => mappingMatches(event, candidate));
       if (!mapping) continue;
+      const eventId = api.valuesForAliases(event, ["ID"])[0];
+      if (eventId && eventIds.has(eventId)) continue;
       const fields = processFields(event, mapping);
       if (!fields.host || !fields.pid) continue;
       const id = eventKey(fields);
       if (keys.has(id)) continue;
       keys.add(id);
+      if (eventId) eventIds.add(eventId);
       nodes.push({ id, ...fields, event: event, mappingName: mapping.name, source: index === 0 });
     }
     let sourceNodeId = nodes.find((node) => node.source)?.id || null;
