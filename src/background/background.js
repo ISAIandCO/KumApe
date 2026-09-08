@@ -56,9 +56,9 @@ const keyMigration = (async () => {
 
 async function loadConfig() {
   await keyMigration;
-  const stored = await browser.storage.local.get({ ...DEFAULT_CONFIG, apiToken: "" });
-  const { apiToken, ...config } = stored;
-  return { ...config, token: apiToken || "" };
+  const stored = await browser.storage.local.get({ ...DEFAULT_CONFIG, apiToken: "", aiApiKey: "" });
+  const { apiToken, aiApiKey, ...config } = stored;
+  return { ...config, token: apiToken || "", aiKey: typeof aiApiKey === "string" ? aiApiKey.trim() : "" };
 }
 
 function permissionPattern(origin) {
@@ -271,9 +271,11 @@ async function runAi(message) {
   const timeout = setTimeout(() => controller.abort(), 120_000);
   let response;
   try {
+    const headers = { Accept: "application/json", "Content-Type": "application/json; charset=utf-8" };
+    if (config.aiKey) headers.Authorization = `Bearer ${config.aiKey}`;
     response = await fetch(new URL("chat/completions", base), {
       method: "POST", credentials: "omit", signal: controller.signal,
-      headers: { Accept: "application/json", "Content-Type": "application/json; charset=utf-8" },
+      headers,
       body: JSON.stringify({
         model: config.ai.model || "local-model", stream: false,
         messages: [
@@ -340,7 +342,8 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
 
       case "config:get": {
         const config = await loadConfig();
-        return { ok: true, config: { ...config, token: undefined, tokenPresent: Boolean(config.token) } };
+        const { token, aiKey, ...publicConfig } = config;
+        return { ok: true, config: { ...publicConfig, tokenPresent: Boolean(token), aiKeyPresent: Boolean(aiKey) } };
       }
       case "session:test":
         return { ok: true, user: await (await adapter()).getCurrentUser() };

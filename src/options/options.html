@@ -46,9 +46,10 @@
       <label class="checkbox"><input id="ai-enabled" type="checkbox"> Включить локальный AI</label>
       <label>OpenAI-compatible endpoint<input id="ai-endpoint" type="url" value="http://127.0.0.1:8080/v1" placeholder="http://192.168.1.10:8080/v1"><small class="hint">Разрешены loopback и адреса локальной сети: private IPv4, локальные IPv6, имена без точки и домены .local, .lan или .home.arpa. Подойдут llama.cpp server, Ollama с совместимым API и другие локальные серверы.</small></label>
       <label>Модель<input id="ai-model" type="text" value="local-model" placeholder="local-model"></label>
+      <label>API-ключ<input id="ai-api-key" type="password" autocomplete="off" placeholder="Не сохранён"><small class="hint">Необязательно. Если задан, передаётся выбранному endpoint в заголовке <code>Authorization: Bearer</code>.</small></label>
       <label>Режим приватности<select id="ai-privacy"><option value="strict">Strict — только разрешённые поля</option><option value="redacted">Redacted — всё с маскированием секретов</option><option value="full">Full — полное событие</option></select></label>
       <p class="hint">По умолчанию используется Strict. Контекст показывается перед отправкой; облачный fallback не выполняется.</p>
-      <button id="save-ai" type="button">Сохранить настройки AI</button>
+      <div class="actions"><button id="save-ai" type="button">Сохранить настройки AI</button><button id="clear-ai-key" type="button">Удалить ключ AI</button></div>
     </section>
     <section>
       <h2>Проверка подключения</h2>

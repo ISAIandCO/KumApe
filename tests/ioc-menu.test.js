@@ -53,8 +53,13 @@ function fixture(origin = "https://kuma.test:7220") {
     const node = new Element("div"); node.setAttribute("kuma-section", "event-field"); node.setAttribute("kuma-id", id); node.setAttribute("kuma-data", data); return node;
   });
   const card = new Element("article"); card.append(headingWrapper, field, plainTitleField, ...extraFields);
+  const correlationHeading = new Element("h2"); correlationHeading.textContent = "Информация о корреляционном событии";
+  const correlationFields = [["Timestamp", "2026-09-08T10:00:00Z"], ["DeviceEventClassID", "correlation"], ["Type", "3"]].map(([id, data]) => {
+    const node = new Element("div"); node.setAttribute("kuma-section", "event-field"); node.setAttribute("kuma-id", id); node.setAttribute("kuma-data", data); return node;
+  });
+  const correlationCard = new Element("article"); correlationCard.append(correlationHeading, ...correlationFields);
   const unrelatedWrapper = new Element("div"); const unrelatedTitle = new Element("span"); unrelatedTitle.textContent = "Информация о событии"; unrelatedWrapper.append(unrelatedTitle);
-  document.documentElement.append(card, unrelatedWrapper);
+  document.documentElement.append(card, correlationCard, unrelatedWrapper);
   const kumaEvent = { ID: "event-id", SourceAddress: "8.8.8.8", Timestamp: "2026-09-08T10:00:00Z" };
   const context = vm.createContext({ URL, AbortController, document, location: { origin, href: `${origin}/events/event-id` }, innerWidth: 1200, innerHeight: 900,
     window: new Element("window"),
@@ -72,8 +77,9 @@ function fixture(origin = "https://kuma.test:7220") {
   for (const source of sources) vm.runInContext(source, context);
   const button = () => label.children[0]?.closedRoot.children[0];
   const eventButton = () => heading.children[0]?.closedRoot.children[0];
+  const correlationButton = () => correlationHeading.children[0]?.closedRoot.children[0];
   const menu = () => [...elements].reverse().find((node) => node.isConnected && node.closedRoot?.children.some((child) => child.tag === "section"))?.closedRoot.children.find((node) => node.tag === "section");
-  return { context, document, field, label, value, headingWrapper, heading, plainTitle, unrelatedTitle, button, eventButton, menu, messages, clipboard, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
+  return { context, document, field, label, value, headingWrapper, heading, plainTitle, unrelatedTitle, button, eventButton, correlationButton, menu, messages, clipboard, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
 }
 
 test("inline menu mounts once, sends nothing on open, and queries only the selected IOC", async () => {
@@ -117,6 +123,7 @@ test("event header menu reuses the current event actions", async () => {
   assert.equal(app.plainTitle.children.length, 0);
   assert.equal(app.unrelatedTitle.children.length, 0);
   assert.equal(app.eventButton().textContent, "🐵 Действия");
+  assert.equal(app.correlationButton().textContent, "🐵 Действия");
   await app.eventButton().emit("click");
   const menu = app.menu();
   assert.deepEqual([...menu.children.filter((node) => node.tag === "button").map((node) => node.textContent)], ["📌 В расследование", "Копировать JSON", "Копировать ссылку", "Скачать JSON"]);
