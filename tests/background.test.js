@@ -73,7 +73,7 @@ test("events 403 identifies the missing POST permission without retrying or chan
   assert.equal(requests, 1);
 });
 
-test("related query is rebuilt in background and opens the native KUMA events route", async () => {
+test("related query is rebuilt in background and opens the native KUMA threat-hunting URI", async () => {
   const session = {};
   const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", fieldProfiles: [] }, session);
   const event = { SourceAddress: "8.8.8.8", Timestamp: "2026-09-07T00:00:00Z" };
@@ -86,14 +86,13 @@ test("related query is rebuilt in background and opens the native KUMA events ro
   assert.equal(app.createdTabs.length, 1);
   const url = new URL(app.createdTabs[0].url);
   assert.equal(url.origin, "https://kuma.test");
-  assert.equal(url.pathname, "/events");
-  assert.equal(url.href.includes("8.8.8.8"), false);
-  assert.equal(url.href.includes("SELECT"), false);
-  assert.match(session["nativeSearch:1"].query, /SourceAddress = '8\.8\.8\.8'/);
-  const claimed = await app.message({ type: "native-search:claim" }, { tab: { id: 1 }, url: "https://kuma.test/events" });
-  assert.match(claimed.request.query, /^SELECT /);
-  await app.message({ type: "native-search:report", applied: true }, { tab: { id: 1 }, url: "https://kuma.test/events" });
-  assert.equal(session["nativeSearch:1"], undefined);
+  assert.equal(url.pathname, "/threat-hunting");
+  assert.match(url.hash, /^#\/threat-hunting\?search=%257B/);
+  const encoded = new URLSearchParams(url.hash.split("?")[1]).get("search");
+  const payload = JSON.parse(decodeURIComponent(encoded));
+  assert.match(payload.sql, /SourceAddress = '8\.8\.8\.8'/);
+  assert.deepEqual(payload.period, { relative: "now-15m", relativeTo: "now" });
+  assert.deepEqual(session, {});
 });
 
 test("legacy processGraph settings migrate to separate Event ID mappings", async () => {
@@ -221,7 +220,7 @@ test("step mode queries selected relations, merges expansions and rejects foreig
  const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');
  let calls=0;
  const app=background({uiOrigin:'https://kuma.test',apiOrigin:'https://kuma.test:7223',clusterId:'c',apiToken:'synthetic'}, {}, async(url,options)=>{
-   const query=JSON.parse(options.body).sql; assert.match(query,/DeviceHostName = 'pc'/);
+   const query=JSON.parse(options.body).sql; assert.match(query,/DeviceHostName = 'pc'/);assert.doesNotMatch(query,/(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
    calls++; return Response.json({events:calls===1?[source,parent,foreign]:[child,foreign]});
  });
  const opened=await app.message({type:'process:open-graph',event:source});const id=opened.result.id;
@@ -231,6 +230,18 @@ test("step mode queries selected relations, merges expansions and rejects foreig
  const expanded=await app.message({type:'process:expand',id,nodeId:sourceId,direction:'children'});assert.equal(expanded.ok,true,expanded.error);
  assert.deepEqual([...expanded.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
  const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,2);
+});
+
+test("graph nodes fall back to the universal KUMA ID when the mapped ID is unavailable", async () => {
+ const mappings=[{name:"Custom",eventIdField:"DeviceEventClassID",eventIdValue:"4688",host:"HostX",pid:"PidX",parentPid:"ParentX",processGuid:"",parentGuid:"",image:"",commandLine:"",user:"",eventRecordId:"CustomEventId",fallbackPid:"",fallbackParentPid:""}];
+ const session={};const app=background({uiOrigin:"https://kuma.test",apiOrigin:"https://kuma.test:7223",clusterId:"c",processMappings:mappings},session);
+ const event={ID:"event-uuid",DeviceEventClassID:"4688",HostX:"pc",PidX:"20",ParentX:"10",Timestamp:"2026-09-07T10:01:00Z"};
+ const opened=await app.message({type:"process:event:open",event,rangeSeconds:900});
+ assert.equal(opened.ok,true,opened.error);
+ const url=new URL(app.createdTabs[0].url);
+ const encoded=new URLSearchParams(url.hash.split("?")[1]).get("search");
+ assert.match(JSON.parse(decodeURIComponent(encoded)).sql,/ID = 'event-uuid'/);
+ assert.deepEqual(session,{});
 });
 
 test('AI reuses a chat for a source tab and sanitizes appended events',async()=>{

@@ -381,6 +381,17 @@
     return `SELECT * FROM \`events\` WHERE ${predicate} ORDER BY Timestamp DESC LIMIT ${safeLimit}`;
   }
 
+  function threatHuntingUrl(origin, sql, rangeSeconds = DEFAULT_RANGE_SECONDS) {
+    const seconds = Math.max(60, Math.min(30 * 86400, Math.floor(Number(rangeSeconds) || DEFAULT_RANGE_SECONDS)));
+    const unit = [[86400, "d"], [3600, "h"], [60, "m"]].find(([size]) => seconds % size === 0);
+    const relative = `now-${unit ? `${seconds / unit[0]}${unit[1]}` : `${seconds}s`}`;
+    const search = encodeURIComponent(encodeURIComponent(JSON.stringify({
+      sql: String(sql),
+      period: { relative, relativeTo: "now" },
+    })));
+    return `${normalizeOrigin(origin)}/threat-hunting#/threat-hunting?search=${search}`;
+  }
+
   function buildRelatedActions(event, profiles = BUILTIN_FIELD_PROFILES) {
     if (!event || typeof event !== "object") return [];
     const actions = [];
@@ -599,6 +610,7 @@
     normalizeOrigin,
     normalizeFieldProfiles,
     sqlIdentifier,
+    threatHuntingUrl,
     valuesForAliases,
   });
 })(globalThis);

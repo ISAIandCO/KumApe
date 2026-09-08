@@ -3,6 +3,7 @@
 
   const api = global.KumApeAdapter;
   const FIELD_KEYS = Object.freeze(["host", "pid", "parentPid", "processGuid", "parentGuid", "image", "commandLine", "user", "eventRecordId", "fallbackPid", "fallbackParentPid"]);
+  const NUMERIC_PID_FIELDS = /^(?:SourceProcessID|DestinationProcessID|DeviceProcessID|DeviceCustomNumber[1-3]|FlexNumber[1-2])$/i;
   const BUILTIN_PROCESS_MAPPINGS = Object.freeze([
     Object.freeze({
       name: "Windows Security 4688", eventIdField: "DeviceEventClassID", eventIdValue: "4688",
@@ -148,6 +149,7 @@
       const relations = [];
       const pairs = [[mapping.pid, mapping.parentPid], [mapping.fallbackPid, mapping.fallbackParentPid]].filter(([pid, parent]) => pid && parent);
       const eq = (field, value) => {
+        if (NUMERIC_PID_FIELDS.test(field)) return /^[0-9]+$/.test(value) ? `${field} = ${value}` : null;
         const values = new Set([value]);
         if (/^[0-9]+$/.test(value)) values.add(`0x${BigInt(value).toString(16)}`);
         return `(${[...values].map(v => api.equalityWhere([field], v)).join(" OR ")})`;
@@ -157,7 +159,8 @@
         if (["children", "both"].includes(direction)) relations.push(eq(parent, source.pid));
         if (direction === "siblings" && source.parentPid) relations.push(eq(parent, source.parentPid));
       }
-      if (relations.length) clauses.push(`(${api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${relations.join(" OR ")}))`);
+      const validRelations = relations.filter(Boolean);
+      if (validRelations.length) clauses.push(`(${api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${validRelations.join(" OR ")}))`);
     }
     if (!clauses.length) throw new Error("Нет полей для выбранного направления");
     return { where: `(${clauses.join(" OR ")})` };

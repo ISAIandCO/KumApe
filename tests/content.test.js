@@ -25,6 +25,23 @@ test("extracts route identifiers without depending on KUMA DOM", () => {
   assert.equal(context.tenantId, "t1");
 });
 
+test("adds the route event ID when the KUMA card does not render the ID field", () => {
+  const field = (id, data) => ({
+    getAttribute: (name) => ({ "kuma-id": id, "kuma-data": data }[name] ?? null),
+    querySelector: () => ({ textContent: data }),
+  });
+  const fields = [field("Timestamp", "1704067200000"), field("DeviceHostName", "host-01"), field("DeviceEventClassID", "4688")];
+  const documentObject = {
+    title: "KUMA", body: { innerText: "KUMA" }, querySelector: () => null,
+    querySelectorAll: (selector) => ({
+      "*": [], "pre, textarea, code": [], '[kuma-section="event-field"][kuma-id]': fields,
+      "table, dl, [role='dialog'], [class*='detail']": [], pre: [],
+    }[selector] || []),
+  };
+  const context = page.extractPageContext(documentObject, "https://kuma.example.local/events?eventId=12345678-1234-4123-8123-123456789abc");
+  assert.equal(context.event.ID, "12345678-1234-4123-8123-123456789abc");
+});
+
 test("extracts KUMA 4.6 event fields and raw text from marked DOM", () => {
   const field = (id, data, displayed = data) => ({
     getAttribute: (name) => ({ "kuma-id": id, "kuma-data": data }[name] ?? null),

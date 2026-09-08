@@ -9,6 +9,8 @@ function api() { const context = vm.createContext({ URL, TextEncoder }); for (co
 test("catalog explains unavailable filters and builds useful Windows predicates", () => {
   const filters = api().buildUsefulFilters({ DeviceEventClassID: "4688", DeviceHostName: "host01", DestinationProcessID: "4120", SourceProcessID: "2032", DestinationProcessName: "powershell.exe" });
   assert.equal(filters.find((item) => item.id === "process-on-host").applicable, true);
+  assert.match(filters.find((item) => item.id === "process-on-host").where, /DeviceEventClassID IN \('4688', '1', 'EXECVE'\)/);
+  assert.match(filters.find((item) => item.id === "powershell-host").where, /DeviceProcessName ILIKE '%powershell\.exe'/);
   assert.match(filters.find((item) => item.id === "process-relatives").where, /DeviceEventClassID = '4688'/);
   assert.equal(filters.find((item) => item.id === "events-by-hash").applicable, false);
   assert.match(filters.find((item) => item.id === "events-by-hash").missing[0], /FileHash/);
@@ -33,7 +35,20 @@ test("editable templates report every missing field and escape inserted values",
   const rendered = api().buildUsefulFilters({ sourceaddress: "x' OR '1'='1", DestinationPort: 443 }, undefined, undefined, filters)[0];
   assert.equal(rendered.rangeSeconds, 7 * 86400);
   assert.match(rendered.where, /x\\' OR \\'1\\'=\\'1/);
-  assert.match(rendered.where, /DestinationPort = '443'/);
+  assert.match(rendered.where, /DestinationPort = 443/);
+});
+
+test("legacy numeric placeholders and built-in OR chains migrate to typed compact SQL", () => {
+  const filters = api();
+  const numeric = filters.renderFilterTemplate("SourcePort = '${SourcePort}'", { SourcePort: 443 });
+  assert.equal(numeric.where, "SourcePort = 443");
+  assert.equal(filters.renderFilterTemplate("SourcePort = ${SourcePort}", { SourcePort: "not-a-number" }).ok, false);
+  const [migrated] = filters.migrateBuiltinFilters([{
+    id: "auth-by-ip",
+    template: "${@ip} AND (DeviceEventClassID = '4624' OR DeviceEventClassID = '4625' OR DeviceEventClassID = '4648' OR DeviceEventClassID = '4771' OR DeviceEventClassID = '4776' OR DeviceEventClassID = 'USER_AUTH' OR DeviceEventClassID = 'USER_LOGIN')",
+  }]);
+  assert.match(migrated.template, /DeviceEventClassID IN \('4624'/);
+  assert.doesNotMatch(migrated.template, /OR DeviceEventClassID/);
 });
 
 test("filter settings reject unsafe SQL and duplicate ids", () => {

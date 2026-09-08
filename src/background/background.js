@@ -27,7 +27,7 @@ const ALLOWED_REQUESTS = Object.freeze([
 // One-time migration keeps keys entered before the persistent-storage update.
 const keyMigration = (async () => {
   const [local, session] = await Promise.all([
-    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings"]),
+    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings", "usefulFilters"]),
     browser.storage.session.get(["apiToken", "iocApiKeys"]),
   ]);
   const moved = {};
@@ -45,6 +45,7 @@ const keyMigration = (async () => {
         ? { ...mapping, pid: "DeviceCustomString5", parentPid: "DeviceCustomString3", fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID" }
         : mapping);
   }
+  if (local.usefulFilters) moved.usefulFilters = globalThis.KumApeFilters.migrateBuiltinFilters(local.usefulFilters);
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
   await browser.storage.session.remove(["apiToken", "iocApiKeys"]);
 })();
@@ -163,11 +164,8 @@ async function openKumaSearchTab(message, action) {
   const config = await loadConfig();
   if (!config.uiOrigin) throw new Error("Сначала укажите адрес KUMA в настройках");
   const query = adapterApi.buildEventsQuery(action.where, message.limit);
-  const tab = await browser.tabs.create({ url: new URL("/events", config.uiOrigin).href });
+  const tab = await browser.tabs.create({ url: adapterApi.threatHuntingUrl(config.uiOrigin, query, message.rangeSeconds) });
   if (!Number.isInteger(tab?.id)) throw new Error("Firefox не вернул идентификатор вкладки KUMA");
-  await browser.storage.session.set({ [`nativeSearch:${tab.id}`]: {
-    query, period: adapterApi.eventPeriod(message.event, message.rangeSeconds), expiresAt: Date.now() + REQUEST_TTL_MS,
-  } });
   return { tabId: tab.id };
 }
 
@@ -292,19 +290,6 @@ async function runAi(message) {
   return content;
 }
 
-if (browser.tabs.onUpdated?.addListener) {
-  browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status !== "complete") return;
-    const request = (await browser.storage.session.get(`nativeSearch:${tabId}`))[`nativeSearch:${tabId}`];
-    if (!request || request.expiresAt < Date.now()) return;
-    try {
-      const config = await loadConfig();
-      if (new URL(tab.url).origin !== config.uiOrigin) return;
-      await browser.scripting.executeScript({ target: { tabId }, files: ["/content/kuma-search.js"] });
-    } catch { /* The in-page fallback is unavailable if KUMA blocks injection. */ }
-  });
-}
-
 browser.tabs.onRemoved?.addListener(async tabId => {
   const id = processGraphTabs.get(tabId);
   if (!id) return;
@@ -319,7 +304,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     if (sender?.tab && !sender.url?.startsWith(browser.runtime.getURL(""))) {
       const config = await loadConfig();
       if (!sender.url || new URL(sender.url).origin !== config.uiOrigin
-        || !["ioc:lookup", "ioc:open", "ioc:options", "native-search:claim", "native-search:report"].includes(message.type)) {
+        || !["ioc:lookup", "ioc:open", "ioc:options"].includes(message.type)) {
         throw new Error("Сообщение разрешено только из карточки настроенной KUMA");
       }
       if (!await browser.permissions.contains({ origins: [permissionPattern(config.uiOrigin)] })) {
@@ -400,20 +385,13 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "process:event:open": {
         const config = await loadConfig();
         const mapping = processApi.mappingForEvent(message.event, config.processMappings);
-        const fields = processApi.processFields(message.event, mapping);
-        if (!mapping || !fields?.eventRecordId || !mapping.eventRecordId) throw new Error("Для узла не найден ID события KUMA");
-        const action = { where: adapterApi.equalityWhere([mapping.eventRecordId], fields.eventRecordId) };
+        if (!mapping) throw new Error("Для узла не найдено сопоставление полей графа");
+        const mappedEventId = mapping.eventRecordId && adapterApi.valuesForAliases(message.event, [mapping.eventRecordId])[0];
+        const eventIdField = mappedEventId ? mapping.eventRecordId : "ID";
+        const eventId = mappedEventId || adapterApi.valuesForAliases(message.event, ["ID"])[0];
+        if (!eventId) throw new Error("Для узла не найден ID события KUMA");
+        const action = { where: adapterApi.equalityWhere([eventIdField], eventId) };
         return { ok: true, result: await openKumaSearchTab({ ...message, limit: 1 }, action) };
-      }
-      case "native-search:claim": {
-        const key = `nativeSearch:${sender.tab.id}`;
-        const request = (await browser.storage.session.get(key))[key];
-        if (!request || request.expiresAt < Date.now()) throw new Error("Фильтр для вкладки не найден или устарел");
-        return { ok: true, request: { query: request.query, period: request.period } };
-      }
-      case "native-search:report": {
-        if (message.applied) await browser.storage.session.remove(`nativeSearch:${sender.tab.id}`);
-        return { ok: true };
       }
       case "workspace:open":
         await browser.tabs.create({ url: browser.runtime.getURL(message.id ? `workspace/workspace.html?id=${encodeURIComponent(message.id)}` : "workspace/workspace.html") });
