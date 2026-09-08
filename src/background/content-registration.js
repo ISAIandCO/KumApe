@@ -11,7 +11,7 @@ async function syncIocContent() {
   const scripts = await browser.scripting.getRegisteredContentScripts({ ids: [id] });
   if (scripts.length) await browser.scripting.unregisterContentScripts({ ids: [id] });
   if (allowed) await browser.scripting.registerContentScripts([{
-    id, matches, js: ["shared/kuma-adapter.js", "shared/ioc-providers.js", "content/ioc-menu.js"],
+    id, matches, js: ["shared/kuma-adapter.js", "shared/ioc-providers.js", "content/content.js", "content/ioc-menu.js"],
     allFrames: true, runAt: "document_idle", persistAcrossSessions: true,
   }]);
   for (const tab of await browser.tabs.query({})) {
@@ -19,7 +19,7 @@ async function syncIocContent() {
     // Remove any menu from a previously configured host.
     await browser.tabs.sendMessage(tab.id, { type: "ioc:menu:stop" }).catch(() => {});
     if (!allowed || new URL(tab.url).origin !== origin) continue;
-    const files = ["/shared/kuma-adapter.js", "/shared/ioc-providers.js", "/content/ioc-menu.js"];
+    const files = ["/shared/kuma-adapter.js", "/shared/ioc-providers.js", "/content/content.js", "/content/ioc-menu.js"];
     try {
       await browser.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files });
     } catch {

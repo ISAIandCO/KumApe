@@ -30,6 +30,7 @@ test("automatic menu registration uses a Firefox host pattern and injects existi
   await vm.runInContext("contentSync", context);
   assert.deepEqual(Array.from(registrations[0].matches), ["https://kuma.test/*"]);
   for (const file of registrations[0].js) await access(new URL(`../src/${file}`, import.meta.url));
+  assert.ok(registrations[0].js.indexOf("content/content.js") < registrations[0].js.indexOf("content/ioc-menu.js"));
   assert.equal(injections.length, 1);
   assert.equal(injections[0].target.tabId, 1);
   assert.ok(injections[0].files.every((file) => file.startsWith("/")));

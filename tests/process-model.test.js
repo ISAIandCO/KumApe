@@ -54,6 +54,11 @@ test("legacy Sysmon profile migrates by DeviceEventClassID rather than category"
 
 test("built-in process mappings qualify ambiguous Event IDs by category", () => {
   const model = api();
+  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[1], name: "Old custom mapping", eventCategories: [] };
+  assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "qemu-ga" }, [legacy]), null);
+  const legacyAction = model.graphSearchAction({ DeviceEventClassID: "1", DeviceEventCategory: "Sysmon", DeviceHostName: "pc", DeviceProcessID: "20", SourceProcessID: "10" }, [legacy]);
+  assert.equal(legacyAction.sourceMapping.name, "Old custom mapping");
+  assert.match(legacyAction.where, /DeviceEventCategory IN \('Microsoft-Windows-Sysmon'/);
   assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "qemu-ga" }), null);
   assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "Microsoft-Windows-Sysmon/Operational" }).name, "Sysmon Process Create 1");
   assert.equal(model.mappingForEvent({ DeviceEventClassID: "4688" }), null);

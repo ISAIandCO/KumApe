@@ -104,14 +104,14 @@ test("legacy processGraph settings migrate to separate Event ID mappings", async
   assert.equal("processGraph" in local.fieldProfiles[0], false);
 });
 
-test("stored built-in process mappings gain categories without changing custom mappings", async () => {
+test("stored Event ID 1 mappings gain Sysmon categories", async () => {
   const local = { processMappings: [
     { name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
     { name: "Custom", eventIdField: "DeviceEventClassID", eventIdValue: "1" },
   ] };
   await background(local).message({ type: "config:get" });
   assert.deepEqual([...local.processMappings[0].eventCategories], ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"]);
-  assert.equal(local.processMappings[1].eventCategories, undefined);
+  assert.deepEqual([...local.processMappings[1].eventCategories], ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"]);
 });
 
 test("process graph request uses configured PID fields and opens graph page", async () => {
@@ -179,7 +179,25 @@ test("content senders are restricted to configured KUMA and IOC messages; extens
   assert.equal((await app.message({ type: "config:get" }, { tab: { id: 1 }, url: "moz-extension://test/options/options.html" })).ok, true);
   assert.equal((await app.message({ type: "config:get" }, { tab: { id: 1 }, url: "https://kuma.test/events" })).ok, false);
   assert.equal((await app.message({ type: "ioc:options" }, { tab: { id: 1 }, url: "https://other.test" })).ok, false);
+  assert.equal((await app.message({ type: "investigation:event:add", event: {} }, { tab: { id: 1 }, url: "https://other.test" })).ok, false);
   assert.equal((await app.message({ type: "ioc:options" }, { tab: { id: 1 }, url: "https://kuma.test/events" })).ok, true);
+});
+
+test("event header action adds the event to the latest open investigation", async () => {
+  const app = background({ uiOrigin: "https://kuma.test" });
+  let added;
+  app.context.KumApeInvestigations = {
+    listInvestigations: async () => [{ id: "inv-1", title: "Case 1", status: "open" }],
+    createInvestigation: async () => { throw new Error("Unexpected investigation creation"); },
+    addEvent: async (...args) => { added = args; },
+  };
+  const event = { ID: "event-id" };
+  const response = await app.message({ type: "investigation:event:add", event }, { tab: { id: 1 }, url: "https://kuma.test/events/event-id" });
+  assert.equal(response.ok, true, response.error);
+  assert.equal(response.investigation.title, "Case 1");
+  assert.equal(added[0], "inv-1");
+  assert.equal(added[1], event);
+  assert.equal(added[2].url, "https://kuma.test/events/event-id");
 });
 
 test("IOC lookups use persistent provider keys, fixed endpoints and GET only", async () => {

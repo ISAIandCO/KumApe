@@ -7,6 +7,7 @@ const sources = await Promise.all(["shared/kuma-adapter.js", "shared/ioc-provide
 function fixture(origin = "https://kuma.test:7220") {
   const observers = [];
   const messages = [];
+  const clipboard = [];
   const fields = [];
   const elements = [];
   class Element {
@@ -37,19 +38,27 @@ function fixture(origin = "https://kuma.test:7220") {
   const field = new Element("div");
   field.setAttribute("kuma-id", "SourceAddress"); field.setAttribute("kuma-data", "8.8.8.8");
   const label = new Element("span"); label.textContent = "SourceAddress"; const value = new Element("span"); value.textContent = "8.8.8.8"; field.append(label, value); fields.push(field);
-  const context = vm.createContext({ URL, AbortController, document, location: { origin }, innerWidth: 1200, innerHeight: 900,
+  const headingWrapper = new Element("div"); headingWrapper.textContent = "Информация о событии";
+  const heading = new Element("h2"); heading.textContent = "Информация о событии"; headingWrapper.append(heading); fields.push(headingWrapper, heading);
+  const kumaEvent = { ID: "event-id", SourceAddress: "8.8.8.8", Timestamp: "2026-09-08T10:00:00Z" };
+  const context = vm.createContext({ URL, AbortController, document, location: { origin, href: `${origin}/events/event-id` }, innerWidth: 1200, innerHeight: 900,
     window: new Element("window"),
+    navigator: { clipboard: { writeText: async (value) => { clipboard.push(value); } } },
+    KumApePage: { extractPageContext: () => ({ event: kumaEvent }) },
     // Mutation callbacks are triggered explicitly, so tests don't rely on wall-clock timing.
     setTimeout: (fn) => { observers.push(fn); return observers.length; }, clearTimeout() {},
     MutationObserver: class { constructor(fn) { this.callback = fn; } observe() {} disconnect() {} },
     browser: { storage: { local: { get: async () => ({ uiOrigin: "https://kuma.test:7220" }) } }, runtime: { onMessage: { addListener() {} }, sendMessage: async (message) => {
-      messages.push(message); return { ok: true, result: { provider: "Test", summary: "Synthetic report" } };
+      messages.push(message); return message.type === "investigation:event:add"
+        ? { ok: true, investigation: { id: "inv-1", title: "Case 1" } }
+        : { ok: true, result: { provider: "Test", summary: "Synthetic report" } };
     } } },
   });
   for (const source of sources) vm.runInContext(source, context);
   const button = () => label.children[0]?.closedRoot.children[0];
+  const eventButton = () => heading.children[0]?.closedRoot.children[0];
   const menu = () => document.documentElement.children.at(-1)?.closedRoot.children.find((node) => node.tag === "section");
-  return { context, document, field, label, value, button, menu, messages, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
+  return { context, document, field, label, value, headingWrapper, heading, button, eventButton, menu, messages, clipboard, elements, ready: () => vm.runInContext("KumApeIocMenu.start()", context) };
 }
 
 test("inline menu mounts once, sends nothing on open, and queries only the selected IOC", async () => {
@@ -85,6 +94,22 @@ test("reused KUMA field reads the new value and Escape closes the menu", async (
   vm.runInContext("KumApeIocMenu.stop()", app.context);
   assert.equal(app.label.children.length, 0);
   await app.ready(); assert.equal(app.label.children.length, 1);
+});
+
+test("event header menu reuses the current event actions", async () => {
+  const app = fixture(); await app.ready();
+  assert.equal(app.headingWrapper.children.length, 1);
+  assert.equal(app.eventButton().textContent, "🐵 Действия");
+  await app.eventButton().emit("click");
+  const menu = app.menu();
+  assert.deepEqual([...menu.children.filter((node) => node.tag === "button").map((node) => node.textContent)], ["📌 В расследование", "Копировать JSON", "Копировать ссылку", "Скачать JSON"]);
+  await menu.children.find((node) => node.textContent === "📌 В расследование").emit("click");
+  assert.equal(app.messages.at(-1).type, "investigation:event:add");
+  assert.equal(app.messages.at(-1).event.ID, "event-id");
+  await menu.children.find((node) => node.textContent === "Копировать JSON").emit("click");
+  await menu.children.find((node) => node.textContent === "Копировать ссылку").emit("click");
+  assert.match(app.clipboard[0], /"ID": "event-id"/);
+  assert.equal(app.clipboard[1], "https://kuma.test:7220/events/event-id");
 });
 
 test("menu does not mount on another port of the permitted hostname", async () => {

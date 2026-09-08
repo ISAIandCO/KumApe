@@ -33,6 +33,7 @@
   "background": {
     "scripts": [
       "shared/kuma-adapter.js",
+      "shared/investigation-db.js",
       "shared/process-model.js",
       "shared/graph-store.js",
       "shared/useful-filters.js",
