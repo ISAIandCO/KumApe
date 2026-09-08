@@ -97,6 +97,10 @@ test("builds the native threat-hunting URI with the KUMA search payload", () => 
     sql,
     period: { relative: "now-5m", relativeTo: "now" },
   });
+
+  const absoluteUrl = new URL(api.threatHuntingUrl("https://kuma.example.local:7220", sql, { from: 1788770280000, to: 1788770339999 }));
+  const absoluteSearch = new URLSearchParams(absoluteUrl.hash.split("?")[1]).get("search");
+  assert.deepEqual(JSON.parse(decodeURIComponent(absoluteSearch)).period, { from: 1788770280000, to: 1788770339999 });
 });
 
 test("normalizes common cluster and event response envelopes", () => {

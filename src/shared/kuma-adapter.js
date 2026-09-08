@@ -381,13 +381,21 @@
     return `SELECT * FROM \`events\` WHERE ${predicate} ORDER BY Timestamp DESC LIMIT ${safeLimit}`;
   }
 
-  function threatHuntingUrl(origin, sql, rangeSeconds = DEFAULT_RANGE_SECONDS) {
-    const seconds = Math.max(60, Math.min(30 * 86400, Math.floor(Number(rangeSeconds) || DEFAULT_RANGE_SECONDS)));
-    const unit = [[86400, "d"], [3600, "h"], [60, "m"]].find(([size]) => seconds % size === 0);
-    const relative = `now-${unit ? `${seconds / unit[0]}${unit[1]}` : `${seconds}s`}`;
+  function threatHuntingUrl(origin, sql, rangeOrPeriod = DEFAULT_RANGE_SECONDS) {
+    let period;
+    if (rangeOrPeriod && typeof rangeOrPeriod === "object") {
+      const from = Number(rangeOrPeriod.from), to = Number(rangeOrPeriod.to);
+      if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to) throw new TypeError("Недопустимый период поиска");
+      period = { from, to };
+    } else {
+      const seconds = Math.max(60, Math.min(30 * 86400, Math.floor(Number(rangeOrPeriod) || DEFAULT_RANGE_SECONDS)));
+      const unit = [[86400, "d"], [3600, "h"], [60, "m"]].find(([size]) => seconds % size === 0);
+      const relative = `now-${unit ? `${seconds / unit[0]}${unit[1]}` : `${seconds}s`}`;
+      period = { relative, relativeTo: "now" };
+    }
     const search = encodeURIComponent(encodeURIComponent(JSON.stringify({
       sql: String(sql),
-      period: { relative, relativeTo: "now" },
+      period,
     })));
     return `${normalizeOrigin(origin)}/threat-hunting#/threat-hunting?search=${search}`;
   }
