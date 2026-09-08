@@ -186,7 +186,7 @@
     shadow.append(button); node.append(host); eventButtons.set(node, host);
   }
   function isEventTitle(node) {
-    const exact = (value) => value?.replace(/\s+/g, " ").trim().toLowerCase() === "информация о событии";
+    const exact = (value) => ["информация о событии", "информация о корреляционном событии"].includes(value?.replace(/\s+/g, " ").trim().toLowerCase());
     if (!exact(node.textContent) || [...(node.children || [])].some((child) => exact(child.textContent))) return false;
     for (let parent = node.parentElement, depth = 0; parent && depth < 8; parent = parent.parentElement, depth++) {
       if (parent.getAttribute?.("kuma-section") === "event-field" || parent === document.body || parent === document.documentElement) return false;
