@@ -308,7 +308,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     if (sender?.tab && !sender.url?.startsWith(browser.runtime.getURL(""))) {
       const config = await loadConfig();
       if (!sender.url || new URL(sender.url).origin !== config.uiOrigin
-        || !["ioc:lookup", "ioc:open", "ioc:options", "investigation:event:add"].includes(message.type)) {
+        || !["ioc:lookup", "ioc:open", "ioc:options", "investigation:event:add", "event:json"].includes(message.type)) {
         throw new Error("Сообщение разрешено только из карточки настроенной KUMA");
       }
       if (!await browser.permissions.contains({ origins: [permissionPattern(config.uiOrigin)] })) {
@@ -336,6 +336,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const config = await loadConfig();
         await globalThis.KumApeInvestigations.addEvent(investigation.id, message.event, { uiOrigin: config.uiOrigin, url: sender?.url || null });
         return { ok: true, investigation: { id: investigation.id, title: investigation.title } };
+      }
+
+      case "event:json": {
+        const eventId = adapterApi.valuesForAliases(message.event, ["ID", "EventID", "EventId"])[0];
+        if (!eventId) throw new Error("Для API-запроса не найден ID события KUMA");
+        const result = await (await adapter()).searchRelated({ where: adapterApi.equalityWhere(["ID"], eventId) }, message.event, 24 * 60 * 60, 2, 2);
+        const event = result.events.find((item) => adapterApi.valuesForAliases(item, ["ID", "EventID", "EventId"])[0] === eventId);
+        if (!event) throw new Error("Событие не найдено через API в выбранном кластере");
+        return { ok: true, event };
       }
 
       case "config:get": {

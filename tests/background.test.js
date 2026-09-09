@@ -206,6 +206,20 @@ test("event header action adds the event to the latest open investigation", asyn
   assert.equal(added[2].url, "https://kuma.test/events/event-id");
 });
 
+test("event header can copy the raw API event with its UTC timestamp", async () => {
+  const raw = { ID: "event-id", Timestamp: "2026-09-08T07:00:00Z", DeviceHostName: "host-1" };
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", apiToken: "key", clusterId: "c" }, {}, async (url, options) => {
+    assert.equal(url.pathname, "/api/v3/events");
+    const body = JSON.parse(options.body);
+    assert.match(body.sql, /WHERE ID = 'event-id'/);
+    assert.equal(body.rawTimestamps, true);
+    return Response.json({ events: [raw] });
+  });
+  const response = await app.message({ type: "event:json", event: { ID: "event-id", Timestamp: "08.09.2026 10:00:00" } }, { tab: { id: 1 }, url: "https://kuma.test/events/event-id" });
+  assert.equal(response.ok, true, response.error);
+  assert.deepEqual(JSON.parse(JSON.stringify(response.event)), raw);
+});
+
 test("IOC lookups use persistent provider keys, fixed endpoints and GET only", async () => {
   const cases = [
     ["virustotal", "ip", "8.8.8.8", "www.virustotal.com", "/api/v3/ip_addresses/8.8.8.8", "x-apikey", { data: { attributes: { last_analysis_stats: { malicious: 1 } } } }],

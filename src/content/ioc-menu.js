@@ -150,6 +150,11 @@
       return `Добавлено в «${response.investigation.title}»`;
     });
     add("Копировать JSON", async (context) => { await navigator.clipboard.writeText(JSON.stringify(context.event, null, 2)); return "JSON скопирован"; });
+    add("Запросить JSON по API", async (context) => {
+      const response = await send({ type: "event:json", event: context.event });
+      await navigator.clipboard.writeText(JSON.stringify(response.event, null, 2));
+      return "JSON из API скопирован";
+    });
     add("Копировать ссылку", async () => { await navigator.clipboard.writeText(location.href); return "Ссылка скопирована"; });
     add("Скачать JSON", async (context) => {
       const id = global.KumApeAdapter.valuesForAliases(context.event, ["ID"])[0] || "event";
