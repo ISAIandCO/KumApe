@@ -1,6 +1,6 @@
 # KumApe
 
-В версии **0.3.10** выделено [общее ядро ApePatrol/KumApe](docs/shared-core.md): API провайдеров, транспорт AI, Markdown, сравнение событий и алгоритмы графа. Изменения ядра переносятся между репозиториями одной командой и проверяются общими тестами.
+В версии **0.3.11** общее ядро подключено из отдельного репозитория [ApeShareCore](https://github.com/ISAIandCO/ApeShareCore) как библиотека, автоматически выбираемая при сборке. [Модули, контракты и метаданные сборки](docs/shared-core.md).
 
 <p align="center"><img src="assets/branding/KumApe.png" width="300" alt="KumApe"></p>
 

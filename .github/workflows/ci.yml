@@ -22,11 +22,17 @@ jobs:
           node-version: 22.22.2
           cache: npm
       - run: npm ci
+      - name: Select compatible core once for tests and build
+        run: |
+          npm run core:prepare
+          echo "APE_CORE_SHA=$(node -p 'require("./.apesharecore.json").sha')" >> "$GITHUB_ENV"
+          echo 'APE_CORE_PREPARED=1' >> "$GITHUB_ENV"
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run core:check
       - run: npm run test:core
       - run: npm test
       - run: npm run package
+      - run: node scripts/check-core.mjs --built
       - run: npm run check:reproducible
       - run: npm run build:self-hosted
       - name: Upload Firefox review artifact

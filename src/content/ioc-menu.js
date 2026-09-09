@@ -64,20 +64,18 @@
         event.stopPropagation();
         if (!event.isTrusted) return;
         button.disabled = true;
-        try { await action(); } catch (error) { status.textContent = error.message; }
+        try { await action(button); } catch (error) { status.textContent = error.message; }
         finally { button.disabled = false; reposition(); }
       });
       menu.append(button);
+      return button;
     };
     add("Копировать IOC", async () => { await navigator.clipboard.writeText(ioc.value); status.textContent = "Скопировано"; });
-    for (const [id, provider] of Object.entries(global.KumApeIoc.PROVIDERS)) {
-      if (!provider.types.includes(ioc.type)) continue;
-      add(`Проверить: ${provider.name} API`, async () => {
-        status.textContent = `Запрос к ${provider.name}…`;
-        const { result } = await send({ type: "ioc:lookup", provider: id, ioc });
-        status.textContent = `${result.provider}\n${result.summary}${result.details ? `\n${JSON.stringify(result.details, null, 2)}` : ""}`;
-      });
-    }
+    global.KumApeIoc.mountActions(menu, {
+      ioc, addButton: add, labelFor: action => `Проверить: ${action.name} API`,
+      lookup: async (provider, input) => (await send({ type: "ioc:lookup", provider, ioc: input })).result,
+      onResult: result => { status.textContent = `${result.provider}\n${result.summary}${result.details ? `\n${JSON.stringify(result.details, null, 2)}` : ""}`; },
+    });
     for (const link of global.KumApeAdapter.iocLinks(ioc)) {
       add(`Открыть отчёт: ${link.provider}`, () => send({ type: "ioc:open", ioc, provider: link.provider }));
     }

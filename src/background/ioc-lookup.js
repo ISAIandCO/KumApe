@@ -1,5 +1,5 @@
-import { lookupIoc } from "../shared/core/ioc-enrichment.js";
-import { chatEndpoint, requestChatCompletion } from "../shared/core/ai-transport.js";
+import { lookupIoc } from "@isaiandco/ape-share-core/ioc/client";
+import { chatEndpoint, requestChatCompletion } from "@isaiandco/ape-share-core/ai/transport";
 
 // Compatibility boundary: keep existing KumApe messages, key names and permissions.
 async function lookup(providerId, input) {
