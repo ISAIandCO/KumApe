@@ -1,9 +1,11 @@
+import { prepareCore } from "./resolve-core.mjs";
 import { build } from "esbuild";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+const coreBuild = await prepareCore();
 const corePackage = path.dirname(fileURLToPath(import.meta.resolve("@isaiandco/ape-share-core/package.json")));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argValue = (name) => {
@@ -18,6 +20,7 @@ const updateUrl = `https://github.com/${process.env.GITHUB_REPOSITORY || "ISAIan
 
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
+await writeFile(path.join(output, "apesharecore-build.json"), `${JSON.stringify(coreBuild, null, 2)}\n`);
 for (const directory of ["ai", "background", "content", "options", "popup", "process-graph", "shared", "workspace"]) {
   await cp(path.join(root, "src", directory), path.join(output, directory), { recursive: true });
 }
