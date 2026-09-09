@@ -1,4 +1,5 @@
 import { renderMarkdown } from './markdown.js';
+import { requestPreparedAi } from './ai-request.js';
 
 // Shared by event and investigation chats, following ApePatrol's persistent chat flow.
 export async function mountChat(root, key, context, additionalContext) {
@@ -59,7 +60,7 @@ export async function mountChat(root, key, context, additionalContext) {
     submit.disabled = true; previewButton.disabled = true; prompt.disabled = true; clear.disabled = true; allow.disabled = true;
     try {
       status.textContent = 'Модель отвечает…';
-      const response = await request({ ...prepared, type: 'ai:chat' });
+      const response = await requestPreparedAi(prepared.preview, { allowTools: prepared.allowTools });
       messages.push({ ...prepared.messages.at(-1), context: prepared.preview.context }, { role: 'assistant', content: response.content });
       requests.replaceChildren();
       for (const call of response.toolCalls || []) {
