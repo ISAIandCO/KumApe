@@ -1,5 +1,6 @@
 import { renderMarkdown } from './markdown.js';
 import { requestPreparedAi } from './ai-request.js';
+import './ai-privacy.js';
 
 // Shared by event and investigation chats, following ApePatrol's persistent chat flow.
 export async function mountChat(root, key, context, additionalContext) {
@@ -7,7 +8,7 @@ export async function mountChat(root, key, context, additionalContext) {
   if (!stored) {
     try { stored = {messages:JSON.parse(sessionStorage.getItem(key) || "[]")}; } catch { stored = {}; }
   }
-  const messages = Array.isArray(stored.messages) ? stored.messages.slice(-40) : [];
+  const messages = globalThis.KumApeAiPrivacy.compactMessageContexts(Array.isArray(stored.messages) ? stored.messages.slice(-40) : []);
   const make = (tag, text) => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
   root.replaceChildren();
   root.classList.add('ai-chat');
@@ -61,7 +62,7 @@ export async function mountChat(root, key, context, additionalContext) {
     try {
       status.textContent = 'Модель отвечает…';
       const response = await requestPreparedAi(prepared.preview, { allowTools: prepared.allowTools });
-      messages.push({ ...prepared.messages.at(-1), context: prepared.preview.context }, { role: 'assistant', content: response.content });
+      messages.push({ ...prepared.messages.at(-1), ...(prepared.preview.context ? { context: prepared.preview.context } : {}) }, { role: 'assistant', content: response.content });
       requests.replaceChildren();
       for (const call of response.toolCalls || []) {
         const text=make('p',`AI запросил дополнительный контекст: ${call.arguments}`);

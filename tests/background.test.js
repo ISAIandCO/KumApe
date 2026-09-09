@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
+const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
 function storage(data) {
   return {
     async get(keys) {
@@ -319,6 +319,34 @@ test("AI preserves complete ApePatrol endpoints and rejects stale previews", asy
     assert.equal((await app.message({...input,type:"ai:chat",preview})).ok,false);
     assert.equal(calls,1);
   }
+});
+
+test("AI sends unique event context once while retaining text history", async () => {
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
+  const event = { DeviceHostName: "host01", DeviceEventClassID: "4688" };
+  const messages = [
+    { role: "user", content: "Первый вопрос", context: event },
+    { role: "assistant", content: "Первый ответ" },
+    { role: "user", content: "Второй вопрос", context: event },
+    { role: "assistant", content: "Второй ответ" },
+    { role: "user", content: "Третий вопрос" },
+  ];
+  const response = await app.message({ type: "ai:preview", event, messages });
+  assert.equal(response.ok, true, response.error);
+  const body = JSON.parse(response.preview.body);
+  assert.equal(JSON.stringify(body).match(/host01/g)?.length, 1);
+  assert.equal(JSON.stringify(body).includes("Контекст сообщения"), false);
+  assert.equal(body.messages.at(-1).content, "Третий вопрос");
+  assert.equal(response.preview.context, null);
+});
+
+test("AI accepts context above 200 KB and caps it at 2 MiB", async () => {
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
+  const accepted = await app.message({ type: "ai:preview", event: { Message: "x".repeat(300_000) }, messages: [{ role: "user", content: "Analyze" }] });
+  assert.equal(accepted.ok, true, accepted.error);
+  const rejected = await app.message({ type: "ai:preview", event: { Message: "x".repeat(2 * 1024 * 1024) }, messages: [{ role: "user", content: "Analyze" }] });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.error, /2 МБ/);
 });
 
 test("ThreatFox uses the common client through KumApe key and permission adapters", async () => {

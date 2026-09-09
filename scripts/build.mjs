@@ -33,11 +33,11 @@ async function moduleEntries(directory) {
   }
   return entries;
 }
-const classic = new Set(["shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)));
+const classic = new Set(["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)));
 await build({ entryPoints: (await moduleEntries(path.join(root, "src"))).filter(file => !classic.has(file)),
   outbase: path.join(root, "src"), outdir: output, bundle: true, format: "esm", platform: "browser", target: "firefox140" });
 // Classic-script boundaries bundle the same ES modules consumed by ApePatrol.
-await build({ entryPoints: ["shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)),
+await build({ entryPoints: ["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)),
   outbase: path.join(root, "src"), outdir: output, bundle: true, format: "iife", platform: "browser", target: "firefox140" });
 await cp(path.join(root, "assets", "icons"), path.join(output, "assets", "icons"), { recursive: true });
 
