@@ -27,6 +27,7 @@ jobs:
       - run: npm run test:core
       - run: npm test
       - run: npm run package
+      - run: node scripts/check-core.mjs --built
       - run: npm run check:reproducible
       - run: npm run build:self-hosted
       - name: Upload Firefox review artifact

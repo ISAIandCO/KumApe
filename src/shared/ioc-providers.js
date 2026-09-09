@@ -1,4 +1,5 @@
-import { IOC_API_PROVIDERS } from "./core/providers.js";
+import { mountIocActions } from "@isaiandco/ape-share-core/ioc/ui";
+import { IOC_API_PROVIDERS } from "@isaiandco/ape-share-core/ioc/providers";
 (function (global) {
   "use strict";
   const PROVIDERS = Object.freeze(Object.fromEntries(Object.entries(IOC_API_PROVIDERS).map(([id, provider]) => [id, {
@@ -19,5 +20,9 @@ import { IOC_API_PROVIDERS } from "./core/providers.js";
     return { type, value };
   }
 
-  global.KumApeIoc = Object.freeze({ PROVIDERS, validateIoc });
+  function mountActions(container, options) {
+    const ioc = { ...options.ioc, type: ["md5", "sha1", "sha256"].includes(options.ioc.type) ? "hash" : options.ioc.type };
+    return mountIocActions(container, { ...options, ioc, lookup: id => options.lookup(id, options.ioc) });
+  }
+  global.KumApeIoc = Object.freeze({ PROVIDERS, validateIoc, mountActions });
 })(globalThis);
