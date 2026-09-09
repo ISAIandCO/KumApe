@@ -73,7 +73,9 @@ function fixture(origin = "https://kuma.test:7220") {
     browser: { storage: { local: { get: async () => ({ uiOrigin: "https://kuma.test:7220" }) } }, runtime: { onMessage: { addListener() {} }, sendMessage: async (message) => {
       messages.push(message); return message.type === "investigation:event:add"
         ? { ok: true, investigation: { id: "inv-1", title: "Case 1" } }
-        : { ok: true, result: { provider: "Test", summary: "Synthetic report" } };
+        : message.type === "event:json"
+          ? { ok: true, event: { ID: "event-id", Timestamp: "2026-09-08T07:00:00Z" } }
+          : { ok: true, result: { provider: "Test", summary: "Synthetic report" } };
     } } },
   });
   for (const source of sources) vm.runInContext(source, context);
@@ -128,14 +130,17 @@ test("event header menu reuses the current event actions", async () => {
   assert.equal(app.correlationButton().textContent, "🐵 Действия");
   await app.eventButton().emit("click");
   const menu = app.menu();
-  assert.deepEqual([...menu.children.filter((node) => node.tag === "button").map((node) => node.textContent)], ["📌 В расследование", "Копировать JSON", "Копировать ссылку", "Скачать JSON"]);
+  assert.deepEqual([...menu.children.filter((node) => node.tag === "button").map((node) => node.textContent)], ["📌 В расследование", "Копировать JSON", "Запросить JSON по API", "Копировать ссылку", "Скачать JSON"]);
   await menu.children.find((node) => node.textContent === "📌 В расследование").emit("click");
   assert.equal(app.messages.at(-1).type, "investigation:event:add");
   assert.equal(app.messages.at(-1).event.ID, "event-id");
   await menu.children.find((node) => node.textContent === "Копировать JSON").emit("click");
+  await menu.children.find((node) => node.textContent === "Запросить JSON по API").emit("click");
   await menu.children.find((node) => node.textContent === "Копировать ссылку").emit("click");
   assert.match(app.clipboard[0], /"ID": "event-id"/);
-  assert.equal(app.clipboard[1], "https://kuma.test:7220/events/event-id");
+  assert.match(app.clipboard[1], /"Timestamp": "2026-09-08T07:00:00Z"/);
+  assert.equal(app.clipboard[2], "https://kuma.test:7220/events/event-id");
+  assert.equal(app.messages.find((message) => message.type === "event:json").event.ID, "event-id");
 });
 
 test("menu does not mount on another port of the permitted hostname", async () => {

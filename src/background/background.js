@@ -264,24 +264,28 @@ async function runAi(message) {
   if (!config.ai?.enabled) throw new Error("Локальный AI выключен в настройках");
   const endpoint = globalThis.KumApeAiTransport.chatEndpoint(aiEndpoint(config), { expandBase: true });
   if (!await browser.permissions.contains({ origins: [permissionPattern(endpoint.origin)] })) throw new Error("Нет разрешения Firefox для локального AI endpoint");
-  const request = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, config.ai.privacyMode || "strict") : await storedRequest("aiRequest", message.id);
-  if (request.bytes > 200_000) throw new Error("Контекст AI превышает лимит 200 КБ. Используйте Strict или Redacted режим.");
-  const messages = Array.isArray(message.messages) ? message.messages.slice(-20).map((item) => ({
+  const mode = config.ai.privacyMode || "strict";
+  const baseContext = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, mode) : await storedRequest("aiRequest", message.id);
+  const history = Array.isArray(message.messages) ? message.messages.slice(-20) : [];
+  const previousContexts = history.filter((item) => item?.role !== "assistant" && item?.context).map((item) => item.context);
+  const request = globalThis.KumApeAiPrivacy.mergeContexts([...previousContexts, baseContext.payload], mode);
+  if (request.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает лимит 2 МБ. Используйте Strict, Redacted или сократите число событий.");
+  const messages = history.map((item) => ({
     role: item?.role === "assistant" ? "assistant" : "user",
-    content: `${String(item?.content || "").slice(0, 20000)}${item?.role !== "assistant" && item?.context ? `\nКонтекст сообщения:\n${JSON.stringify(globalThis.KumApeAiPrivacy.prepareEvent(item.context, config.ai.privacyMode || "strict"))}` : ""}`,
-  })).filter((item) => item.content) : [];
+    content: String(item?.content || "").slice(0, 20000),
+  })).filter((item) => item.content);
   if (!messages.length) throw new Error("Введите вопрос");
   const tools = message.allowTools ? [{type:"function",function:{name:"get_additional_context",description:"Request more read-only investigation or event context from the operator. No data is fetched without their approval.",parameters:{type:"object",properties:{reason:{type:"string"}},required:["reason"],additionalProperties:false}}}] : undefined;
   const body = JSON.stringify({
         tools,
         model: config.ai.model || "local-model", stream: false,
         messages: [
-          { role: "system", content: "Ты SOC-аналитик. Анализируй только приложенное событие KUMA. Не выдумывай отсутствующие факты. Отвечай по-русски, кратко и структурированно." },
-          { role: "user", content: `Контекст события KUMA:\n${JSON.stringify(request.payload)}` },
+          { role: "system", content: "Ты SOC-аналитик. Анализируй только приложенные события KUMA. Не выдумывай отсутствующие факты. Отвечай по-русски, кратко и структурированно." },
+          { role: "user", content: `Контекст событий KUMA:\n${JSON.stringify(request.payload)}` },
           ...messages,
         ],
       });
-  if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: request.payload };
+  if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: globalThis.KumApeAiPrivacy.contextDelta(baseContext.payload, previousContexts, mode) };
   if (message.preview && (message.preview.body !== body || message.preview.endpoint !== endpoint.href)) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
   const reply = await globalThis.KumApeAiTransport.requestChatCompletion(endpoint, body, { apiKey: config.aiKey || "" });
   const content = typeof reply?.content === "string" ? reply.content : "";
@@ -304,7 +308,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     if (sender?.tab && !sender.url?.startsWith(browser.runtime.getURL(""))) {
       const config = await loadConfig();
       if (!sender.url || new URL(sender.url).origin !== config.uiOrigin
-        || !["ioc:lookup", "ioc:open", "ioc:options", "investigation:event:add"].includes(message.type)) {
+        || !["ioc:lookup", "ioc:open", "ioc:options", "investigation:event:add", "event:json"].includes(message.type)) {
         throw new Error("Сообщение разрешено только из карточки настроенной KUMA");
       }
       if (!await browser.permissions.contains({ origins: [permissionPattern(config.uiOrigin)] })) {
@@ -332,6 +336,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const config = await loadConfig();
         await globalThis.KumApeInvestigations.addEvent(investigation.id, message.event, { uiOrigin: config.uiOrigin, url: sender?.url || null });
         return { ok: true, investigation: { id: investigation.id, title: investigation.title } };
+      }
+
+      case "event:json": {
+        const eventId = adapterApi.valuesForAliases(message.event, ["ID", "EventID", "EventId"])[0];
+        if (!eventId) throw new Error("Для API-запроса не найден ID события KUMA");
+        const result = await (await adapter()).searchRelated({ where: adapterApi.equalityWhere(["ID"], eventId) }, message.event, 24 * 60 * 60, 2, 2);
+        const event = result.events.find((item) => adapterApi.valuesForAliases(item, ["ID", "EventID", "EventId"])[0] === eventId);
+        if (!event) throw new Error("Событие не найдено через API в выбранном кластере");
+        return { ok: true, event };
       }
 
       case "config:get": {
@@ -434,10 +447,8 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         if (existing) { try { old = await storedRequest("aiRequest", existing.id); } catch { existing = null; } }
         const previous = old ? (old.payload.Events || [old.payload]) : [];
         const current = Array.isArray(message.event?.Events) ? message.event.Events : [message.event];
-        const combined = [...previous, ...current].map(event => globalThis.KumApeAiPrivacy.prepareEvent(event, config.ai.privacyMode || "strict"));
-        const unique = [...new Map(combined.map(event => [JSON.stringify(event),event])).values()].slice(-100);
-        const preview = globalThis.KumApeAiPrivacy.preview(unique.length === 1 ? unique[0] : {Events:unique}, config.ai.privacyMode || "strict");
-        if (preview.bytes > 200000) throw new Error("Контекст AI превышает 200 КБ; выберите более строгий режим");
+        const preview = globalThis.KumApeAiPrivacy.mergeContexts([...previous, ...current], config.ai.privacyMode || "strict");
+        if (preview.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает 2 МБ; выберите более строгий режим или сократите число событий");
         const id = existing?.id || requestId();
         await browser.storage.local.set({ [`aiRequest:${id}`]: { payload: preview.payload, fields: preview.fields, bytes: preview.bytes, mode: preview.mode, historyKey: sessionKey ? `aiTabHistory:${config.uiOrigin}:${message.sourceTabId}` : `aiHistory:${id}` } });
         if (existing?.tabId) {

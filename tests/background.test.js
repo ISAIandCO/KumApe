@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
+const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
 function storage(data) {
   return {
     async get(keys) {
@@ -206,6 +206,20 @@ test("event header action adds the event to the latest open investigation", asyn
   assert.equal(added[2].url, "https://kuma.test/events/event-id");
 });
 
+test("event header can copy the raw API event with its UTC timestamp", async () => {
+  const raw = { ID: "event-id", Timestamp: "2026-09-08T07:00:00Z", DeviceHostName: "host-1" };
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", apiToken: "key", clusterId: "c" }, {}, async (url, options) => {
+    assert.equal(url.pathname, "/api/v3/events");
+    const body = JSON.parse(options.body);
+    assert.match(body.sql, /WHERE ID = 'event-id'/);
+    assert.equal(body.rawTimestamps, true);
+    return Response.json({ events: [raw] });
+  });
+  const response = await app.message({ type: "event:json", event: { ID: "event-id", Timestamp: "08.09.2026 10:00:00" } }, { tab: { id: 1 }, url: "https://kuma.test/events/event-id" });
+  assert.equal(response.ok, true, response.error);
+  assert.deepEqual(JSON.parse(JSON.stringify(response.event)), raw);
+});
+
 test("IOC lookups use persistent provider keys, fixed endpoints and GET only", async () => {
   const cases = [
     ["virustotal", "ip", "8.8.8.8", "www.virustotal.com", "/api/v3/ip_addresses/8.8.8.8", "x-apikey", { data: { attributes: { last_analysis_stats: { malicious: 1 } } } }],
@@ -319,6 +333,34 @@ test("AI preserves complete ApePatrol endpoints and rejects stale previews", asy
     assert.equal((await app.message({...input,type:"ai:chat",preview})).ok,false);
     assert.equal(calls,1);
   }
+});
+
+test("AI sends unique event context once while retaining text history", async () => {
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
+  const event = { DeviceHostName: "host01", DeviceEventClassID: "4688" };
+  const messages = [
+    { role: "user", content: "Первый вопрос", context: event },
+    { role: "assistant", content: "Первый ответ" },
+    { role: "user", content: "Второй вопрос", context: event },
+    { role: "assistant", content: "Второй ответ" },
+    { role: "user", content: "Третий вопрос" },
+  ];
+  const response = await app.message({ type: "ai:preview", event, messages });
+  assert.equal(response.ok, true, response.error);
+  const body = JSON.parse(response.preview.body);
+  assert.equal(JSON.stringify(body).match(/host01/g)?.length, 1);
+  assert.equal(JSON.stringify(body).includes("Контекст сообщения"), false);
+  assert.equal(body.messages.at(-1).content, "Третий вопрос");
+  assert.equal(response.preview.context, null);
+});
+
+test("AI accepts context above 200 KB and caps it at 2 MiB", async () => {
+  const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
+  const accepted = await app.message({ type: "ai:preview", event: { Message: "x".repeat(300_000) }, messages: [{ role: "user", content: "Analyze" }] });
+  assert.equal(accepted.ok, true, accepted.error);
+  const rejected = await app.message({ type: "ai:preview", event: { Message: "x".repeat(2 * 1024 * 1024) }, messages: [{ role: "user", content: "Analyze" }] });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.error, /2 МБ/);
 });
 
 test("ThreatFox uses the common client through KumApe key and permission adapters", async () => {
