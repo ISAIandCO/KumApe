@@ -1,3 +1,4 @@
+import { detectEventPlatform, filterSupportsPlatform, normalizeFilterPlatforms } from "@isaiandco/ape-share-core/filters/platform";
 import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate } from "@isaiandco/ape-share-core/filters/templates";
 (function initUsefulFilters(global) {
   "use strict";
@@ -49,12 +50,12 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "device-pid-host", name: "Device PID на узле", description: "Ищет PID процесса только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DeviceProcessID} OR DestinationProcessID = ${DeviceProcessID} OR SourceProcessID = ${DeviceProcessID})", timeRange: "1h", enabled: true },
     { id: "destination-pid-host", name: "Destination PID на узле", description: "Ищет целевой PID только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DestinationProcessID} OR DestinationProcessID = ${DestinationProcessID} OR SourceProcessID = ${DestinationProcessID})", timeRange: "1h", enabled: true },
     { id: "children-by-pid", name: "Дочерние процессы по PID", description: "Ищет процессы, у которых PID текущего процесса указан как родительский.", template: "DeviceHostName = '${DeviceHostName}' AND SourceProcessID = ${DestinationProcessID}", timeRange: "1h", enabled: true },
-    { id: "command-line-4688", name: "Та же командная строка 4688", description: "Ищет точное совпадение DeviceCustomString4.", template: "DeviceCustomString4 = '${DeviceCustomString4}'", timeRange: "7d", enabled: true },
-    { id: "powershell-host", name: "PowerShell на узле", description: "Ищет Script Block 4104 и запуски PowerShell без учёта регистра и пути.", template: "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName ILIKE '%powershell.exe' OR DestinationProcessName ILIKE '%powershell.exe')", timeRange: "24h", enabled: true },
-    { id: "service-install-host", name: "Установка служб на узле", description: "Ищет Windows 4697 и 7045.", template: "${@host} AND DeviceEventClassID IN ('4697', '7045')", timeRange: "7d", enabled: true },
-    { id: "network-by-process", name: "Сеть текущего процесса", description: "Ищет Sysmon 3 и Windows Filtering Platform 5156/5157 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID IN ('3', '5156', '5157')", timeRange: "1h", enabled: true },
-    { id: "dns-by-process", name: "DNS текущего процесса", description: "Ищет Sysmon DNS Query 22 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
-    { id: "dns-query-host", name: "DNS-запросы на узле", description: "Ищет Sysmon DNS Query 22.", template: "${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
+    { id: "command-line-4688", platforms: ["windows"], name: "Та же командная строка 4688", description: "Ищет точное совпадение DeviceCustomString4.", template: "DeviceCustomString4 = '${DeviceCustomString4}'", timeRange: "7d", enabled: true },
+    { id: "powershell-host", platforms: ["windows"], name: "PowerShell на узле", description: "Ищет Script Block 4104 и запуски PowerShell без учёта регистра и пути.", template: "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName ILIKE '%powershell.exe' OR DestinationProcessName ILIKE '%powershell.exe')", timeRange: "24h", enabled: true },
+    { id: "service-install-host", platforms: ["windows"], name: "Установка служб на узле", description: "Ищет Windows 4697 и 7045.", template: "${@host} AND DeviceEventClassID IN ('4697', '7045')", timeRange: "7d", enabled: true },
+    { id: "network-by-process", platforms: ["windows"], name: "Сеть текущего процесса", description: "Ищет Sysmon 3 и Windows Filtering Platform 5156/5157 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID IN ('3', '5156', '5157')", timeRange: "1h", enabled: true },
+    { id: "dns-by-process", platforms: ["windows"], name: "DNS текущего процесса", description: "Ищет Sysmon DNS Query 22 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
+    { id: "dns-query-host", platforms: ["windows"], name: "DNS-запросы на узле", description: "Ищет Sysmon DNS Query 22.", template: "${@host} AND DeviceEventClassID = '22'", timeRange: "24h", enabled: true },
     { id: "file-path-host", name: "Файл по полному пути на узле", description: "Ищет текущий FilePath на выбранном узле.", template: "DeviceHostName = '${DeviceHostName}' AND FilePath = '${FilePath}'", timeRange: "7d", enabled: true },
     { id: "file-name-host", name: "Файл с таким именем на узле", description: "Ищет текущее FileName на выбранном узле.", template: "DeviceHostName = '${DeviceHostName}' AND FileName = '${FileName}'", timeRange: "7d", enabled: true },
     { id: "events-by-file", name: "События по файлу", description: "Ищет текущее имя или путь файла во всех полях профиля.", template: "${@file}", timeRange: "7d", enabled: true },
@@ -73,6 +74,12 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "severity", name: "События той же критичности", description: "Ищет события с текущим Severity.", template: "Severity = '${Severity}'", timeRange: "24h", enabled: true },
     { id: "external-id", name: "События с тем же внешним ID", description: "Ищет DeviceExternalID.", template: "DeviceExternalID = '${DeviceExternalID}'", timeRange: "24h", enabled: true },
   ].map(Object.freeze));
+
+  const PLATFORM_EVENT_IDS = Object.freeze({
+    "auth-failures": { windows: "'4625', '4771', '4776'", unix: "'USER_AUTH', 'USER_LOGIN'" },
+    "auth-by-ip": { windows: "'4624', '4625', '4648', '4771', '4776'", unix: "'USER_AUTH', 'USER_LOGIN'" },
+    "process-on-host": { windows: "'4688', '1'", unix: "'EXECVE'" },
+  });
 
   const LEGACY_BUILTIN_TEMPLATES = Object.freeze({
     "source-ip-destination-port": "SourceAddress = '${SourceAddress}' AND DestinationPort = '${DestinationPort}'",
@@ -120,7 +127,7 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     const name = String(filter.name || filter.title || `Фильтр ${index + 1}`).trim().slice(0, 120);
     if (!name) throw new TypeError(`Фильтр ${index + 1}: укажите название`);
     const timeRange = Object.hasOwn(TIME_RANGES, filter.timeRange) ? filter.timeRange : "15m";
-    return { id, name, description: String(filter.description || "Пользовательский SQL-фильтр KUMA.").trim().slice(0, 300), template, timeRange, enabled: filter.enabled !== false };
+    return { id, name, platforms: normalizeFilterPlatforms(filter.platforms ?? BUILTIN_FILTERS.find(item => item.id === id && item.template === template)?.platforms), description: String(filter.description || "Пользовательский SQL-фильтр KUMA.").trim().slice(0, 300), template, timeRange, enabled: filter.enabled !== false };
   }
 
   function normalizeFilterTemplates(filters = BUILTIN_FILTERS) {
@@ -171,8 +178,18 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
 
   function buildUsefulFilters(event, profiles = api.BUILTIN_FIELD_PROFILES, processMappings = processApi.BUILTIN_PROCESS_MAPPINGS, filterTemplates = BUILTIN_FILTERS) {
     if (!event || typeof event !== "object") return [];
-    const filters = normalizeFilterTemplates(filterTemplates).filter((filter) => filter.enabled).map((filter) => {
-      const rendered = renderFilterTemplate(filter.template, event, profiles);
+    const platform = detectEventPlatform({
+      os: api.valuesForAliases(event, ["DeviceOS", "DeviceOSName", "DeviceOperatingSystem", "OperatingSystem", "host.os.name", "host.os.family", "os.name", "os.family"]),
+      source: api.valuesForAliases(event, ["DeviceProduct", "DeviceEventCategory"]),
+      paths: api.valuesForAliases(event, ["FilePath", "DeviceProcessName", "SourceProcessName", "DestinationProcessName"]),
+    });
+    const filters = normalizeFilterTemplates(filterTemplates).filter((filter) => filter.enabled && filterSupportsPlatform(filter, platform)).map((filter) => {
+      const eventIds = PLATFORM_EVENT_IDS[filter.id]?.[platform];
+      const builtin = BUILTIN_FILTERS.find(item => item.id === filter.id);
+      const template = eventIds && filter.template === builtin?.template
+        ? filter.template.replace(/DeviceEventClassID IN \([^)]*\)/, `DeviceEventClassID IN (${eventIds})`)
+        : filter.template;
+      const rendered = renderFilterTemplate(template, event, profiles);
       return {
         id: filter.id, title: filter.name, description: filter.description, type: "query", timeRange: filter.timeRange,
         rangeSeconds: TIME_RANGES[filter.timeRange], applicable: rendered.ok, missing: rendered.missing,
@@ -189,3 +206,4 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
 
   global.KumApeFilters = Object.freeze({ BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
 })(globalThis);
+
