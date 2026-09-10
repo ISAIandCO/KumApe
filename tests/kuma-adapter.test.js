@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { buildSync } from "esbuild";
 import test from "node:test";
 import assert from "node:assert/strict";
 

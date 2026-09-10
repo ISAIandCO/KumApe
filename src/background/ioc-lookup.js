@@ -1,5 +1,4 @@
 import { lookupIoc } from "@isaiandco/ape-share-core/ioc/client";
-import { chatEndpoint, requestChatCompletion } from "@isaiandco/ape-share-core/ai/transport";
 
 // Compatibility boundary: keep existing KumApe messages, key names and permissions.
 async function lookup(providerId, input) {
@@ -23,4 +22,3 @@ async function lookup(providerId, input) {
   }
 }
 globalThis.KumApeLookup = Object.freeze({ lookup });
-globalThis.KumApeAiTransport = Object.freeze({ chatEndpoint, requestChatCompletion });

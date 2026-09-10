@@ -1,15 +1,18 @@
-export function createEntityGraph(items) {
-  const nodes = []; const entities = new Map(); const edges = [];
-  for (const item of items) {
-    const id = `event:${item.id}`;
-    nodes.push({id, itemId:item.id, kind:'event', label:item.label, description:item.label, time:Date.parse(item.timestamp)});
-    for (const key of item.entityKeys || []) {
-      const index = key.indexOf(':'); const entityType = key.slice(0,index); const label = key.slice(index+1);
-      const entityId = `entity:${key}`;
-      if (!entities.has(entityId)) entities.set(entityId,{id:entityId,kind:'entity',entityType,label,typeLabel:entityType,connectionCount:0,queryFields:[entityType]});
-      entities.get(entityId).connectionCount++;
-      edges.push({sourceId:id,targetId:entityId});
-    }
-  }
-  return {nodes:[...nodes,...entities.values()],edges};
+import { createInvestigationGraph } from "@isaiandco/ape-share-core/investigation/graph";
+const labels = { host: "Хост", account: "Учётная запись", process: "Процесс", ip: "IP-адрес", hash: "Хэш" };
+const build = createInvestigationGraph({
+  eventIdentity: item => item.id,
+  eventRef: item => item.id,
+  investigationEventTime: item => typeof item.timestamp === "number" ? item.timestamp : Date.parse(item.timestamp),
+  describeInvestigationEvent: event => ({ title: event.label, description: event.label }),
+  extractedEntities: event => (event.entityKeys ?? []).map(key => {
+    const separator = key.indexOf(":");
+    const type = key.slice(0, separator);
+    return { spec: { key: type, type, label: labels[type] ?? type, fields: [type] }, field: type, value: key.slice(separator + 1) };
+  }),
+});
+export function createEntityGraph(items, options) {
+  const graph = build(items.map(item => ({ ...item, type: "event", snapshot: item })), options);
+  for (const node of graph.nodes) if (node.kind === "event") node.itemId = items[node.itemIndex].id;
+  return graph;
 }

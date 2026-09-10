@@ -118,47 +118,16 @@
     return `pid:${fields.host.toLowerCase()}:${fields.pid}:${fields.timestamp}:${fields.image.toLowerCase()}`;
   }
 
-  function buildGraph(events, sourceEvent, mappings = BUILTIN_PROCESS_MAPPINGS) {
-    const normalized = normalizeMappings(mappings);
-    const combined = [sourceEvent, ...(Array.isArray(events) ? events : [])];
-    const nodes = [];
-    const keys = new Set();
-    const eventIds = new Set();
-    for (const [index, event] of combined.entries()) {
-      const mapping = normalized.find((candidate) => mappingMatches(event, candidate));
-      if (!mapping) continue;
-      const eventId = api.valuesForAliases(event, ["ID"])[0];
-      if (eventId && eventIds.has(eventId)) continue;
-      const fields = processFields(event, mapping);
-      if (!fields.host || !fields.pid) continue;
-      const id = eventKey(fields);
-      if (keys.has(id)) continue;
-      keys.add(id);
-      if (eventId) eventIds.add(eventId);
-      nodes.push({ id, ...fields, event: event, mappingName: mapping.name, source: index === 0 });
-    }
-    let sourceNodeId = nodes.find((node) => node.source)?.id || null;
-    const guidIndex = new Map(nodes.filter((node) => node.processGuid).map((node) => [`${node.host.toLowerCase()}\0${node.processGuid.toLowerCase()}`, node]));
-    const pidIndex = new Map();
-    for (const node of nodes) {
-      const key = `${node.host.toLowerCase()}\0${node.pid}`;
-      if (!pidIndex.has(key)) pidIndex.set(key, []);
-      pidIndex.get(key).push(node);
-    }
-    for (const candidates of pidIndex.values()) candidates.sort((a, b) => a.timestamp - b.timestamp);
-    const edges = [];
-    for (const child of nodes) {
-      let parent = child.parentGuid ? guidIndex.get(`${child.host.toLowerCase()}\0${child.parentGuid.toLowerCase()}`) : null;
-      if (!parent && !child.parentGuid && child.parentPid) {
-        const candidates = pidIndex.get(`${child.host.toLowerCase()}\0${child.parentPid}`) || [];
-        for (const candidate of candidates) {
-          if (candidate.id !== child.id && candidate.timestamp <= child.timestamp && child.timestamp - candidate.timestamp <= 86_400_000) parent = candidate;
-        }
-      }
-      if (parent && parent.id !== child.id) edges.push({ source: parent.id, target: child.id });
-    }
-    if (!sourceNodeId && nodes.length) sourceNodeId = nodes[0].id;
-    return { nodes, edges, sourceNodeId };
+  function normalizeEvent(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
+    if (!event) return null;
+    const mapping = mappingForEvent(event, mappings);
+    const fields = processFields(event, mapping);
+    if (!fields?.host || !fields.pid) return null;
+    return { raw: event, recordId: api.valuesForAliases(event, ["ID"])[0] || fields.eventRecordId || "", host: fields.host.toLowerCase(), time: fields.timestamp,
+      identity: { id: eventKey(fields), kind: fields.processGuid ? "guid" : "pid", value: fields.processGuid || fields.pid },
+      references: [fields.processGuid && { kind: "guid", value: fields.processGuid.toLowerCase() }, { kind: "pid", value: fields.pid }].filter(Boolean),
+      parentRefs: [fields.parentGuid && { kind: "guid", value: fields.parentGuid.toLowerCase() }, fields.parentPid && { kind: "pid", value: fields.parentPid }].filter(Boolean),
+    };
   }
 
   function relatedAction(event, mappings, direction = "both") {
@@ -187,15 +156,6 @@
     return { where: `(${clauses.join(" OR ")})` };
   }
 
-  function connectedGraph(graph, anchorId, direction = "both") {
-    const ids = new Set([anchorId]);
-    for (const edge of graph.edges) {
-      if (["parents", "both"].includes(direction) && edge.target === anchorId) ids.add(edge.source);
-      if (["children", "both"].includes(direction) && edge.source === anchorId) ids.add(edge.target);
-    }
-    return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
-  }
-
   function mappingsFromLegacyProfiles(profiles) {
     const result = [];
     for (const profile of Array.isArray(profiles) ? profiles : []) {
@@ -217,5 +177,5 @@
     return result;
   }
 
-  global.KumApeProcess = Object.freeze({ BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, connectedGraph, normalizePid, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
+  global.KumApeProcess = Object.freeze({ normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, normalizePid, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
 })(globalThis);

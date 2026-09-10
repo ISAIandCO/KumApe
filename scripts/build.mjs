@@ -33,12 +33,18 @@ async function moduleEntries(directory) {
   }
   return entries;
 }
-const classic = new Set(["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)));
+const classic = new Set(["shared/graph-store.js", "shared/useful-filters.js", "shared/kuma-adapter.js", "shared/investigation-db.js", "background/background.js", "shared/process-model.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)));
 await build({ entryPoints: (await moduleEntries(path.join(root, "src"))).filter(file => !classic.has(file)),
   outbase: path.join(root, "src"), outdir: output, bundle: true, format: "esm", platform: "browser", target: "firefox140" });
 // Classic-script boundaries bundle the same ES modules consumed by ApePatrol.
-await build({ entryPoints: ["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)),
+await build({ entryPoints: ["shared/graph-store.js", "shared/useful-filters.js", "shared/kuma-adapter.js", "shared/investigation-db.js", "background/background.js", "shared/process-model.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].map(file => path.join(root, "src", file)),
   outbase: path.join(root, "src"), outdir: output, bundle: true, format: "iife", platform: "browser", target: "firefox140" });
+await cp(path.join(corePackage, "styles/process-graph.css"), path.join(output, "process-graph/graph.css"));
+await writeFile(path.join(output, "process-graph/graph.html"), (await readFile(path.join(corePackage, "templates/process-graph.html"), "utf8"))
+  .replaceAll("__PRODUCT__", "KumApe").replaceAll("__ASSET_PREFIX__", "../").replace("__GRAPH_STYLE__", "graph.css").replace("__SCRIPTS__", '<script src="../shared/kuma-adapter.js"></script><script src="../shared/investigation-db.js"></script><script type="module" src="graph.js"></script>'));
+await cp(path.join(corePackage, "styles/workspace.css"), path.join(output, "workspace/workspace.css"));
+await writeFile(path.join(output, "workspace/workspace.html"), (await readFile(path.join(corePackage, "templates/workspace.html"), "utf8"))
+  .replaceAll("__PRODUCT__", "KumApe").replaceAll("__ASSET_PREFIX__", "../").replace("__SCRIPTS__", '<script src="../shared/kuma-adapter.js"></script><script src="../shared/investigation-db.js"></script><script type="module" src="workspace.js"></script>'));
 await cp(path.join(root, "assets", "icons"), path.join(output, "assets", "icons"), { recursive: true });
 
 await mkdir(path.join(output, "licenses"), { recursive: true });

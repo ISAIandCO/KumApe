@@ -1,16 +1,16 @@
-// Graph snapshots live in IndexedDB: event payloads can exceed storage.session's quota.
-(function (global) {
-  const open = () => new Promise((resolve,reject) => {
-    const request=indexedDB.open('kumape-graphs',1);
-    request.onupgradeneeded=()=>request.result.createObjectStore('graphs');
-    request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
-  });
-  async function transact(mode, action) {
-    const db=await open();
-    try { return await new Promise((resolve,reject)=>{
-      const tx=db.transaction('graphs',mode);const request=action(tx.objectStore('graphs'));
-      tx.oncomplete=()=>resolve(request.result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Graph transaction aborted'));
-    }); } finally { db.close(); }
-  }
-  global.KumApeGraphStore={get:id=>transact('readonly',s=>s.get(id)),set:(id,value)=>transact('readwrite',s=>s.put(value,id)),remove:id=>transact('readwrite',s=>s.delete(id))};
-})(globalThis);
+import { createRecordStorage } from "@isaiandco/ape-share-core/storage/records";
+import { createGraphSnapshots } from "@isaiandco/ape-share-core/graph/snapshots";
+const storage = createRecordStorage({ databaseFactory: () => indexedDB, name: "kumape-graph-state" });
+const snapshots = createGraphSnapshots({ storage });
+globalThis.KumApeGraphStore = {
+  async get(id) {
+    const record = await snapshots.getGraphSnapshot(id);
+    return record ? { request: record.context, result: record.response, createdAt: record.createdAt } : null;
+  },
+  async set(id, value) {
+    const input = { context: value.request, response: value.result, sourceEvent: value.request.event };
+    if (await snapshots.getGraphSnapshot(id)) await snapshots.updateGraphSnapshot(id, input);
+    else await snapshots.saveGraphSnapshot(input, storage, id);
+  },
+  remove: id => snapshots.deleteGraphSnapshot(id),
+};

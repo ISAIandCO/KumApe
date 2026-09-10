@@ -3,9 +3,9 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
+import { webcrypto } from "node:crypto";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
+const files = ["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function storage(data) {
   return {
     async get(keys) {
@@ -20,7 +20,7 @@ function storage(data) {
 function background(local = {}, session = {}, fetchImpl = () => { throw new Error("Unexpected network call"); }, granted = true) {
   let handler;
   const createdTabs = [];
-  const context = vm.createContext({ URL, AbortController, setTimeout, clearTimeout, TextEncoder, btoa,
+  const context = vm.createContext({ URL, AbortController, setTimeout, clearTimeout, TextEncoder, btoa, crypto: webcrypto, structuredClone,
     fetch: fetchImpl,
     browser: {
       storage: { local: storage(local), session: storage(session) },
@@ -164,7 +164,9 @@ test("local AI keeps event data out of URLs and sends only the prepared payload 
   const url = new URL(app.createdTabs[0].url);
   assert.equal(url.pathname, "/ai/assistant.html");
   assert.equal(url.href.includes("host01"), false);
-  const response = await app.message({ type: "ai:chat", id: url.searchParams.get("id"), messages: [{ role: "user", content: "Что произошло?" }] });
+  const input = { id: url.searchParams.get("id"), messages: [{ role: "user", content: "Что произошло?" }] };
+  const { preview } = await app.message({ ...input, type: "ai:preview" });
+  const response = await app.message({ ...input, type: "ai:chat", preview });
   assert.equal(response.content, "Локальный ответ");
   assert.match(JSON.stringify(body), /host01/);
   assert.doesNotMatch(JSON.stringify(body), /SECRET-RAW|SECRET-COOKIE/);
@@ -277,16 +279,19 @@ test("step mode queries selected relations, merges expansions and rejects foreig
  const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');
  let calls=0;
  const app=background({uiOrigin:'https://kuma.test',apiOrigin:'https://kuma.test:7223',clusterId:'c',apiToken:'synthetic'}, {}, async(url,options)=>{
-   const query=JSON.parse(options.body).sql; assert.match(query,/DeviceHostName = 'pc'/);assert.doesNotMatch(query,/(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
+   const body = JSON.parse(options.body);
+   assert.match(body.period.from, /^2026-09-07T/); assert.match(body.period.to, /Z$/);
+   assert.ok(Date.parse(body.period.to) > Date.parse(body.period.from));
+   const query=body.sql; assert.match(query,/DeviceHostName = 'pc'/);assert.doesNotMatch(query,/(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
    calls++; return Response.json({events:calls===1?[source,parent,foreign]:[child,foreign]});
  });
  const opened=await app.message({type:'process:open-graph',event:source});const id=opened.result.id;
  const first=await app.message({type:'process:request:run',id,mode:'step'});assert.equal(first.ok,true,first.error);
- assert.deepEqual([...first.result.graph.nodes.map(n=>n.pid)].sort(),['10','20']);
+ assert.deepEqual([...first.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
  const sourceId=first.result.graph.sourceNodeId;
  const expanded=await app.message({type:'process:expand',id,nodeId:sourceId,direction:'children'});assert.equal(expanded.ok,true,expanded.error);
  assert.deepEqual([...expanded.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
- const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,2);
+ const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,3);
 });
 
 test("graph nodes fall back to the universal KUMA ID when the mapped ID is unavailable", async () => {
@@ -350,7 +355,7 @@ test("AI sends unique event context once while retaining text history", async ()
   const body = JSON.parse(response.preview.body);
   assert.equal(JSON.stringify(body).match(/host01/g)?.length, 1);
   assert.equal(JSON.stringify(body).includes("Контекст сообщения"), false);
-  assert.equal(body.messages.at(-1).content, "Третий вопрос");
+  assert.match(body.messages.at(-1).content, /^Третий вопрос/);
   assert.equal(response.preview.context, null);
 });
 
@@ -358,6 +363,7 @@ test("AI accepts context above 200 KB and caps it at 2 MiB", async () => {
   const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
   const accepted = await app.message({ type: "ai:preview", event: { Message: "x".repeat(300_000) }, messages: [{ role: "user", content: "Analyze" }] });
   assert.equal(accepted.ok, true, accepted.error);
+  assert.ok(accepted.preview.body.length > 300_000);
   const rejected = await app.message({ type: "ai:preview", event: { Message: "x".repeat(2 * 1024 * 1024) }, messages: [{ role: "user", content: "Analyze" }] });
   assert.equal(rejected.ok, false);
   assert.match(rejected.error, /2 МБ/);

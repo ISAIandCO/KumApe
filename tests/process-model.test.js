@@ -1,10 +1,21 @@
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
+import { createProcessWorkflow } from "@isaiandco/ape-share-core/graph/workflow";
 
-const sources = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const sources = ["shared/kuma-adapter.js", "shared/process-model.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function api() { const context = vm.createContext({ URL, TextEncoder }); for (const source of sources) vm.runInContext(source, context); return context.KumApeProcess; }
+async function graphFor(events, source, mappings, mode = "broad") {
+  const normalize = event => api().normalizeEvent(event, mappings);
+  const workflow = createProcessWorkflow({ origin: "https://kuma.test", normalize,
+    searchPage: async () => ({ events: events.filter(normalize), exhausted: true }),
+  }, { process: { maxNodes: 1000, maxDepth: 64, pageSize: 250, queryConcurrency: 2, seedWindowSeconds: 900 }, searchScope: { mode: "default" } });
+  const result = await workflow.load(source, mode);
+  return { ...result.graph, sourceNodeId: result.sourceNodeId, edges: result.graph.nodes.filter(node => node.parentId).map(node => ({ source: node.parentId, target: node.id })) };
+}
+
 const mapping = { name: "4688 custom", eventIdField: "DeviceEventClassID", eventIdValue: "4688", host: "HostX", pid: "PidX", parentPid: "ParentX", processGuid: "GuidX", parentGuid: "ParentGuidX", image: "ImageX", commandLine: "CmdX", user: "UserX", eventRecordId: "IdX" };
 const event = (id, pid, parentPid, time, host = "pc", extra = {}) => ({ DeviceEventClassID: "4688", HostX: host, PidX: pid, ParentX: parentPid, ImageX: `${id}.exe`, IdX: id, Timestamp: time, ...extra });
 
@@ -15,32 +26,32 @@ test("custom Event ID mapping builds a host-wide process query", () => {
   assert.equal(action.source.pid, "20");
 });
 
-test("graph links parent to child, isolates hosts and resolves PID reuse to closest prior process", () => {
+test("graph links parent to child, isolates hosts and resolves PID reuse to closest prior process", async () => {
   const events = [
     event("old", "10", "1", "2026-09-07T09:00:00Z"), event("new", "10", "1", "2026-09-07T10:00:00Z"),
     event("child", "20", "10", "2026-09-07T10:01:00Z"), event("other", "10", "1", "2026-09-07T10:00:30Z", "other"),
   ];
-  const graph = api().buildGraph(events, events[2], [mapping]);
+  const graph = await graphFor(events, events[2], [mapping]);
   assert.ok(graph.edges.some((edge) => edge.source === "event:pc:new" && edge.target === "event:pc:child"));
   assert.ok(!graph.edges.some((edge) => edge.source === "event:pc:old" && edge.target === "event:pc:child"));
   assert.ok(!graph.edges.some((edge) => edge.source === "event:other:other" && edge.target === "event:pc:child"));
   assert.equal(graph.sourceNodeId, "event:pc:child");
 });
 
-test("GUID relationship takes precedence over a reused PID", () => {
+test("GUID relationship takes precedence over a reused PID", async () => {
   const parent = event("p", "10", "1", "2026-09-07T10:00:00Z", "pc", { GuidX: "parent-guid" });
   const wrong = event("w", "10", "1", "2026-09-07T10:00:30Z", "pc", { GuidX: "wrong-guid" });
   const child = event("c", "20", "10", "2026-09-07T10:01:00Z", "pc", { GuidX: "child-guid", ParentGuidX: "parent-guid" });
-  const graph = api().buildGraph([parent, wrong, child], child, [mapping]);
+  const graph = await graphFor([parent, wrong, child], child, [mapping]);
   assert.ok(graph.edges.some((edge) => edge.source.includes("parent-guid") && edge.target.includes("child-guid")));
 });
 
-test("graph removes duplicate KUMA IDs and correlation events", () => {
+test("graph removes duplicate KUMA IDs and correlation events", async () => {
   const source = event("source", "20", "10", "2026-09-07T10:01:00Z", "pc", { ID: "source-id" });
   const first = event("first", "30", "20", "2026-09-07T10:02:00Z", "pc", { ID: "duplicate-id", GuidX: "guid-a" });
   const duplicate = event("duplicate", "31", "20", "2026-09-07T10:02:01Z", "pc", { ID: "duplicate-id", GuidX: "guid-b" });
   const correlation = event("correlation", "40", "20", "2026-09-07T10:03:00Z", "pc", { ID: "correlation-id", Type: 3 });
-  const graph = api().buildGraph([source, first, duplicate, correlation], source, [mapping]);
+  const graph = await graphFor([source, first, duplicate, correlation], source, [mapping]);
   assert.deepEqual([...graph.nodes.map((node) => node.event.ID)].sort(), ["duplicate-id", "source-id"]);
   assert.equal(api().mappingForEvent(correlation, [mapping]), null);
 });
@@ -80,15 +91,14 @@ test("4688 chooses a coherent PID pair, normalizes hex, and preserves custom map
   assert.equal(model.processFields({...e,MyPid:'42',MyParent:'1'},custom).pid,'42');
 });
 
-test("step graph excludes unrelated candidates, other hosts, and later PID reuse", () => {
+test("step graph excludes unrelated candidates, other hosts, and later PID reuse", async () => {
   const model=api();
   const child=event('child','20','10','2026-09-07T10:01:00Z');
   const parent=event('parent','10','1','2026-09-07T10:00:00Z');
   const unrelated=event('unrelated','99','1','2026-09-07T10:00:00Z');
   const later=event('later','10','1','2026-09-07T10:02:00Z');
-  const graph=model.buildGraph([child,parent,unrelated,later],child,[mapping]);
-  const step=model.connectedGraph(graph,graph.sourceNodeId,'parents');
-  assert.deepEqual([...step.nodes.map(n=>n.pid)].sort(),['10','20']);
+  const step = await graphFor([child,parent,unrelated,later],child,[mapping],"step");
+  assert.deepEqual(step.nodes.map(node => node.fact.identity.value).sort(), ["10", "20"]);
   const action=model.relatedAction(child,[mapping],'parents');
   assert.match(action.where,/HostX = 'pc'/);assert.match(action.where,/PidX = '10'/);assert.doesNotMatch(action.where,/ParentX = '20'/);
 });

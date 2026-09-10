@@ -1,6 +1,6 @@
 {
   "name": "kumape",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "private": true,
   "description": "Firefox investigation companion for Kaspersky KUMA",
   "license": "Apache-2.0",
@@ -24,6 +24,7 @@
     "esbuild": "0.28.2"
   },
   "apeShareCore": {
-    "major": 1
+    "major": 1,
+    "minimumMinor": 2
   }
 }

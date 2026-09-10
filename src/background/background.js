@@ -1,3 +1,7 @@
+import { rangeAroundEvents } from "@isaiandco/ape-share-core/values/time";
+import { previewLocalAi, requestLocalAi } from "../shared/ai-conversation.js";
+import { localAiEndpoint } from "../shared/ai-endpoint.js";
+import { createProcessWorkflow } from "@isaiandco/ape-share-core/graph/workflow";
 "use strict";
 
 const adapterApi = globalThis.KumApeAdapter;
@@ -97,7 +101,7 @@ async function readJson(response, path, method = "GET") {
   }
 }
 
-async function kumaRequest({ origin, path, method = "GET", token, body }) {
+async function kumaRequest({ origin, path, method = "GET", token, body, signal }) {
   const normalizedOrigin = adapterApi.normalizeOrigin(origin);
   const config = await loadConfig();
   const origins = {
@@ -115,6 +119,9 @@ async function kumaRequest({ origin, path, method = "GET", token, body }) {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
+  const abort = () => controller.abort(signal.reason);
+  if (signal?.aborted) abort();
+  signal?.addEventListener("abort", abort, { once: true });
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json; charset=utf-8";
@@ -135,6 +142,7 @@ async function kumaRequest({ origin, path, method = "GET", token, body }) {
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -193,41 +201,57 @@ async function runProcessGraph(message) {
   const request = previous?.request || await storedRequest("processRequest", message.id);
   const config = await loadConfig();
   if (previous && previous.result.origin !== config.uiOrigin) throw new Error("Адрес KUMA изменён. Откройте новый граф.");
-  const operation = requestId(); processOperations.set(message.id, operation);
   const expanding = message.type === "process:expand";
-  const mode = expanding ? previous?.result.queryMetadata.mode : message.mode === "step" ? "step" : "broad";
   if (expanding && !previous) throw new Error("Сначала загрузите граф");
-  const selected = expanding ? previous.result.graph.nodes.find(n => n.id === message.nodeId) : null;
+  const selected = expanding ? previous.result.graph.nodes.find(node => node.id === message.nodeId) : null;
   if (expanding && !selected) throw new Error("Узел отсутствует на текущем графе");
-  const queryLimit = message.nodeLimit === 10000 ? 10000 : request.limit;
-  const anchor = selected?.event || request.event;
-  let range = expanding ? Math.max(60, Math.min(86400, Number(message.rangeSeconds) || 900)) : request.rangeSeconds;
-  let searchEvent = anchor;
-  const direction = message.direction || "both";
-  const interval = expanding && ["previous", "next"].includes(direction);
-  if (interval) {
-    const period = previous.result.period;
-    const edge = Date.parse(direction === "previous" ? period.from : period.to);
-    searchEvent = { ...anchor, Timestamp: new Date(edge + (direction === "previous" ? -1 : 1) * range * 1000).toISOString() };
-  }
-  const action = !interval && (expanding || mode === "step")
-    ? processApi.relatedAction(anchor, config.processMappings, direction)
-    : processApi.graphSearchAction(anchor, config.processMappings);
+  const limit = Math.min(10000, Math.max(request.limit, Number(message.nodeLimit) || request.limit));
+  processOperations.get(message.id)?.abort();
+  const operation = new AbortController(); processOperations.set(message.id, operation);
+  const normalize = event => processApi.normalizeEvent(event, config.processMappings);
+  const pages = new Map();
+  const workflow = createProcessWorkflow({ origin: config.uiOrigin, normalize,
+    async searchPage(query) {
+      if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
+      const intent = query.where;
+      const actions = intent.kind === "processes" ? [processApi.graphSearchAction(request.event, config.processMappings)]
+        : intent.events.map(event => processApi.relatedAction(event, config.processMappings, intent.direction));
+      const where = actions.map(action => `(${action.where})`).join(" OR ");
+      const period = { from: query.timeFrom, to: query.timeTo };
+      const key = JSON.stringify([where, period]);
+      if (!pages.has(key)) {
+        const fetched = await (await adapter()).searchRelated({ where, period, signal: operation.signal }, request.event, request.rangeSeconds, limit, 10000);
+        const events = fetched.events.filter(event => normalize(event));
+        pages.set(key, { events, capped: fetched.events.length >= limit });
+      }
+      if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
+      const page = pages.get(key);
+      return { events: page.events.slice(query.offset, query.offset + query.limit),
+        exhausted: query.offset + query.limit >= page.events.length,
+        limitReached: page.capped };
+    },
+  }, { process: { maxNodes: limit, maxDepth: 64, pageSize: 1000, queryConcurrency: 2,
+    seedWindowSeconds: request.rangeSeconds, expansionStepSeconds: 3600 }, searchScope: { mode: "default" } });
   try {
-    const fetched = await (await adapter()).searchRelated(action, searchEvent, range, queryLimit, 10000);
+    const input = { sourceEvent: request.event, nodeEvent: selected?.event,
+      existingEvents: previous?.result.graph.nodes.map(node => node.event) ?? [],
+      queryMetadata: previous?.result.queryMetadata, nodeLimit: limit, resumeLimit: message.resumeLimit,
+      direction: message.direction || "both", stepSeconds: message.rangeSeconds || 3600 };
+    const interval = message.scope === "range" || ["previous", "next"].includes(input.direction);
+    const response = expanding ? await (interval ? workflow.expand(request.event, input, operation.signal) : workflow.expandNode(request.event, input, operation.signal))
+      : await workflow.load(request.event, message.mode === "step" ? "step" : "broad", operation.signal);
+    if (!response.ok) throw new Error(response.error);
     if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
-    let candidate = processApi.buildGraph(fetched.events, anchor, config.processMappings);
-    if (!interval && (mode === "step" || expanding) && direction !== "siblings") candidate = processApi.connectedGraph(candidate, candidate.sourceNodeId, direction);
-    const events = [...(expanding ? previous.result.graph.nodes.map(n => n.event) : []), ...candidate.nodes.map(n => n.event)];
-    const graph = processApi.buildGraph(events, request.event, config.processMappings);
-    const period = expanding ? {
-      from: new Date(Math.min(Date.parse(previous.result.period.from), Date.parse(fetched.period.from))).toISOString(),
-      to: new Date(Math.max(Date.parse(previous.result.period.to), Date.parse(fetched.period.to))).toISOString(),
-    } : fetched.period;
-    graph.truncated = fetched.events.length >= queryLimit;
-    const result = { graph, sourceNodeId: graph.sourceNodeId, sourceEvent: request.event, origin: config.uiOrigin, query: fetched.query, period,
-      queryMetadata: { mode, partial: true, timeFrom: period.from, timeTo: period.to, limitReached: graph.truncated, maxNodes: queryLimit } };
-    const snapshot = { request: { ...request, limit: queryLimit }, result };
+    const graph = { ...response.graph, sourceNodeId: response.sourceNodeId,
+      edges: response.graph.nodes.filter(node => node.parentId).map(node => ({ source: node.parentId, target: node.id })),
+      nodes: response.graph.nodes.map(node => ({ ...node,
+        ...processApi.processFields(node.event, processApi.mappingForEvent(node.event, config.processMappings)),
+        mappingName: processApi.mappingForEvent(node.event, config.processMappings)?.name,
+      })),
+    };
+    const period = { from: response.queryMetadata.timeFrom, to: response.queryMetadata.timeTo };
+    const result = { ...response, graph, period };
+    const snapshot = { request: { ...request, limit }, result, createdAt: previous?.createdAt ?? Date.now() };
     await globalThis.KumApeGraphStore?.set(message.id, snapshot);
     processGraphs.set(message.id, snapshot);
     return result;
@@ -251,52 +275,32 @@ async function storedRequest(prefix, id) {
   return value;
 }
 
-function aiEndpoint(config) {
-  const url = new URL(config.ai?.endpoint || "");
-  if (!/^https?:$/.test(url.protocol) || !adapterApi.isLocalNetworkHost(url.hostname)) {
-    throw new Error("AI endpoint должен находиться на этом компьютере или в локальной сети");
-  }
-  return url;
-}
+function aiEndpoint(config) { return localAiEndpoint(config.ai?.endpoint); }
 
+// Legacy message envelope; preparation, privacy, limits and transport use the same chat adapter.
 async function runAi(message) {
   const config = await loadConfig();
-  if (!config.ai?.enabled) throw new Error("Локальный AI выключен в настройках");
-  const endpoint = globalThis.KumApeAiTransport.chatEndpoint(aiEndpoint(config), { expandBase: true });
-  if (!await browser.permissions.contains({ origins: [permissionPattern(endpoint.origin)] })) throw new Error("Нет разрешения Firefox для локального AI endpoint");
   const mode = config.ai.privacyMode || "strict";
   const baseContext = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, mode) : await storedRequest("aiRequest", message.id);
   const history = Array.isArray(message.messages) ? message.messages.slice(-20) : [];
-  const previousContexts = history.filter((item) => item?.role !== "assistant" && item?.context).map((item) => item.context);
-  const request = globalThis.KumApeAiPrivacy.mergeContexts([...previousContexts, baseContext.payload], mode);
-  if (request.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает лимит 2 МБ. Используйте Strict, Redacted или сократите число событий.");
-  const messages = history.map((item) => ({
-    role: item?.role === "assistant" ? "assistant" : "user",
-    content: String(item?.content || "").slice(0, 20000),
-  })).filter((item) => item.content);
-  if (!messages.length) throw new Error("Введите вопрос");
-  const tools = message.allowTools ? [{type:"function",function:{name:"get_additional_context",description:"Request more read-only investigation or event context from the operator. No data is fetched without their approval.",parameters:{type:"object",properties:{reason:{type:"string"}},required:["reason"],additionalProperties:false}}}] : undefined;
-  const body = JSON.stringify({
-        tools,
-        model: config.ai.model || "local-model", stream: false,
-        messages: [
-          { role: "system", content: "Ты SOC-аналитик. Анализируй только приложенные события KUMA. Не выдумывай отсутствующие факты. Отвечай по-русски, кратко и структурированно." },
-          { role: "user", content: `Контекст событий KUMA:\n${JSON.stringify(request.payload)}` },
-          ...messages,
-        ],
-      });
-  if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: globalThis.KumApeAiPrivacy.contextDelta(baseContext.payload, previousContexts, mode) };
-  if (message.preview && (message.preview.body !== body || message.preview.endpoint !== endpoint.href)) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
-  const reply = await globalThis.KumApeAiTransport.requestChatCompletion(endpoint, body, { apiKey: config.aiKey || "" });
-  const content = typeof reply?.content === "string" ? reply.content : "";
-  const toolCalls = message.allowTools ? (reply?.tool_calls || []).filter(call=>call?.function?.name === "get_additional_context").slice(0,4).map(call=>({name:call.function.name,arguments:String(call.function.arguments || "{}").slice(0,4000)})) : [];
-  if (!content.trim() && !toolCalls.length) throw new Error("Локальный AI вернул пустой ответ");
-  return {content,toolCalls};
+  const previousContexts = history.filter(item => item?.role !== "assistant" && item?.context).map(item => item.context);
+  const context = globalThis.KumApeAiPrivacy.mergeContexts([...previousContexts, baseContext.payload], mode);
+  if (context.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает лимит 2 МБ");
+  const conversation = history.map(item => ({ role: item?.role === "assistant" ? "assistant" : "user", content: String(item?.content || "").slice(0, 20000) })).filter(item => item.content);
+  const lastUser = conversation.findLast(item => item.role === "user");
+  if (!lastUser) throw new Error("Введите вопрос");
+  lastUser.attachments = [{ type: "event", value: "event-context", label: "Контекст событий", snapshot: context.payload }];
+  const input = { conversation, contextType: "context", allowSiemTools: message.allowTools };
+  const reviewed = await previewLocalAi(input);
+  if (message.type === "ai:preview") return { body: reviewed.preview.serialized, endpoint: reviewed.endpoint, context: globalThis.KumApeAiPrivacy.contextDelta(baseContext.payload, previousContexts, mode) };
+  if (!message.preview || message.preview.body !== reviewed.preview.serialized || message.preview.endpoint !== reviewed.endpoint) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
+  return requestLocalAi({ ...input, confirmed: true, previewHash: reviewed.preview.hash, previewEndpoint: reviewed.endpoint });
 }
 
 browser.tabs.onRemoved?.addListener(async tabId => {
   const id = processGraphTabs.get(tabId);
   if (!id) return;
+  processOperations.get(id)?.abort();
   processGraphTabs.delete(tabId); processGraphs.delete(id); processOperations.delete(id);
   await browser.storage.session.remove(`processRequest:${id}`);
   await globalThis.KumApeGraphStore?.remove(id);
@@ -401,7 +405,13 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "process:request:run":
       case "process:expand":
         return { ok: true, result: await runProcessGraph(message) };
+      case "process:snapshot:get": {
+        const saved = processGraphs.get(message.id) || await globalThis.KumApeGraphStore?.get(message.id);
+        const config = await loadConfig();
+        return { ok: true, snapshot: saved ? { response: saved.result, createdAt: saved.createdAt ?? Date.now(), stale: saved.result.origin !== config.uiOrigin } : null };
+      }
       case "process:cancel":
+        processOperations.get(message.id)?.abort();
         processOperations.delete(message.id);
         return { ok: true };
       case "event:open":
@@ -430,7 +440,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
           return `(${action.where})`;
         });
         const range = [900,3600,86400,604800].includes(message.rangeSeconds) ? message.rangeSeconds : 3600;
-        return {ok:true,result:await (await adapter()).searchRelated({where:predicates.join(message.mode === "any" ? " OR " : " AND ")},items[0].payload,range,250)};
+        const where = predicates.join(message.mode === "any" ? " OR " : " AND ");
+        const period = rangeAroundEvents(items, item => adapterApi.eventTimestamp(item.payload), range);
+        const result = await (await adapter()).searchRelated({ where, period }, items[0].payload, range, 100);
+        return { ok: true, result: { ...result, query: where } };
       }
       case "ai:open": {
         const config = await loadConfig();

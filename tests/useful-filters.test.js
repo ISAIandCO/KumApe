@@ -1,9 +1,10 @@
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
 
-const sources = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const sources = ["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function api() { const context = vm.createContext({ URL, TextEncoder }); for (const source of sources) vm.runInContext(source, context); return context.KumApeFilters; }
 
 test("catalog explains unavailable filters and builds useful Windows predicates", () => {

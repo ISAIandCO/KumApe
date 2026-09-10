@@ -1,35 +1,7 @@
-(function initInvestigationDb(global) {
-  "use strict";
-
-  const DB_NAME = "kumape-investigations";
-  const DB_VERSION = 1;
-  const uid = (prefix) => `${prefix}_${global.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
-  const done = (request) => new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-  const transactionDone = (transaction) => new Promise((resolve, reject) => {
-    transaction.oncomplete = resolve;
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error("Транзакция отменена"));
-  });
-
-  function open() {
-    if (!global.indexedDB) return Promise.reject(new Error("IndexedDB недоступна"));
-    const request = global.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      const investigations = db.createObjectStore("investigations", { keyPath: "id" });
-      investigations.createIndex("byUpdatedAt", "updatedAt");
-      investigations.createIndex("byStatus", "status");
-      const items = db.createObjectStore("items", { keyPath: "id" });
-      items.createIndex("byInvestigation", "investigationId");
-      items.createIndex("byInvestigationTime", ["investigationId", "timestamp"]);
-      items.createIndex("byEntity", "entityKeys", { multiEntry: true });
-    };
-    return done(request);
-  }
-
+import { describeEvent as describeCanonicalEvent } from "@isaiandco/ape-share-core/events/describe";
+import { createInvestigationRepository } from "@isaiandco/ape-share-core/investigation/repository";
+import { workspaceToMarkdown } from "@isaiandco/ape-share-core/investigation/model";
+const repository = createInvestigationRepository({ databaseFactory: () => globalThis.indexedDB, name: "kumape-investigations" });
   function eventValue(event, fields) {
     const entries = new Map(Object.entries(event || {}).map(([key, value]) => [key.toLowerCase(), value]));
     for (const field of fields) {
@@ -40,16 +12,16 @@
   }
 
   function describeEvent(event) {
-    const code = eventValue(event, ["DeviceEventClassID", "EventID", "Name"]);
-    const process = eventValue(event, ["DeviceProcessName", "DestinationProcessName", "SourceProcessName", "ProcessName"]);
-    const user = eventValue(event, ["SourceUserName", "DestinationUserName", "UserName"]);
-    const host = eventValue(event, ["DeviceHostName", "SourceHostName", "DestinationHostName"]);
-    const rule = eventValue(event, ["CorrelationRuleName", "CorrelationRuleTitle", "RuleName"]);
-    if (rule) return `Корреляция: ${rule}`;
-    if (["4688", "1", "EXECVE"].includes(code) && process) return `Запущен процесс ${process}${user ? ` (${user})` : ""}`;
-    if (["4624", "USER_LOGIN"].includes(code) && user) return `Вход пользователя ${user}${host ? ` на ${host}` : ""}`;
-    if (["4625", "USER_AUTH"].includes(code) && user) return `Неуспешный вход ${user}${host ? ` на ${host}` : ""}`;
-    return [code && `Событие ${code}`, process, user, host].filter(Boolean).join(" · ") || "Событие KUMA";
+    return describeCanonicalEvent({
+      msgid: eventValue(event, ["DeviceEventClassID", "EventID", "Name"]),
+      process: eventValue(event, ["DeviceProcessName", "DestinationProcessName", "SourceProcessName", "ProcessName"]),
+      account: eventValue(event, ["SourceUserName", "DestinationUserName", "UserName"]),
+      host: eventValue(event, ["DeviceHostName", "SourceHostName", "DestinationHostName"]),
+      commandLine: eventValue(event, ["DeviceCustomString4", "DeviceCustomString2", "FlexString1"]),
+      correlationRule: eventValue(event, ["CorrelationRuleName", "CorrelationRuleTitle", "RuleName"]),
+      sourceIp: eventValue(event, ["SourceAddress"]), destinationIp: eventValue(event, ["DestinationAddress"]),
+      originalDescription: eventValue(event, ["Message"]),
+    }).title;
   }
 
   function entityKeys(event) {
@@ -70,107 +42,22 @@
     return [...new Set(keys)];
   }
 
-  async function listInvestigations() {
-    const db = await open();
-    const values = await done(db.transaction("investigations").objectStore("investigations").getAll());
-    db.close();
-    return values.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }
 
-  async function getInvestigation(id) {
-    const db = await open();
-    const investigation = await done(db.transaction("investigations").objectStore("investigations").get(id));
-    db.close();
-    return investigation || null;
-  }
-
-  async function createInvestigation(title = "Новое расследование") {
-    const now = new Date().toISOString();
-    const investigation = { id: uid("inv"), title: String(title).trim().slice(0, 160) || "Новое расследование", status: "open", tags: [], notes: "", createdAt: now, updatedAt: now };
-    const db = await open();
-    await done(db.transaction("investigations", "readwrite").objectStore("investigations").add(investigation));
-    db.close();
-    return investigation;
-  }
-
-  async function updateInvestigation(id, changes) {
-    const current = await getInvestigation(id);
-    if (!current) throw new Error("Расследование не найдено");
-    const next = {
-      ...current,
-      ...(changes.title !== undefined ? { title: String(changes.title).trim().slice(0, 160) || current.title } : {}),
-      ...(changes.status !== undefined ? { status: changes.status === "closed" ? "closed" : "open" } : {}),
-      ...(changes.notes !== undefined ? { notes: String(changes.notes).slice(0, 100000) } : {}),
-      ...(changes.tags !== undefined ? { tags: [...new Set(changes.tags.map((tag) => String(tag).trim()).filter(Boolean))].slice(0, 30) } : {}),
-      updatedAt: new Date().toISOString(),
-    };
-    const db = await open();
-    await done(db.transaction("investigations", "readwrite").objectStore("investigations").put(next));
-    db.close();
-    return next;
-  }
-
-  async function addEvent(investigationId, event, source = {}) {
-    if (!event || typeof event !== "object") throw new Error("Событие не найдено");
-    const investigation = await getInvestigation(investigationId);
-    if (!investigation) throw new Error("Расследование не найдено");
-    const eventId = eventValue(event, ["ID", "EventID", "EventId", "event.id"]);
-    const timestamp = global.KumApeAdapter?.eventTimestamp(event) || Date.now();
-    const item = {
-      id: eventId ? `event_${investigationId}_${eventId}` : uid("item"),
-      investigationId,
-      type: "event",
-      timestamp: new Date(timestamp).toISOString(),
-      label: describeEvent(event),
-      source: { uiOrigin: source.uiOrigin || null, eventId, url: source.url || null },
-      entityKeys: entityKeys(event),
-      payload: event,
-    };
-    const db = await open();
-    const tx = db.transaction(["items", "investigations"], "readwrite");
-    tx.objectStore("items").put(item);
-    tx.objectStore("investigations").put({ ...investigation, updatedAt: new Date().toISOString() });
-    await transactionDone(tx);
-    db.close();
-    return item;
-  }
-
-  async function listItems(investigationId) {
-    const db = await open();
-    const items = await done(db.transaction("items").objectStore("items").index("byInvestigation").getAll(investigationId));
-    db.close();
-    return items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  }
-
-  async function removeItem(investigationId, id) {
-    const db = await open();
-    const tx = db.transaction("items", "readwrite");
-    const store = tx.objectStore("items");
-    const item = await done(store.get(id));
-    if (item?.investigationId === investigationId) store.delete(id);
-    await transactionDone(tx); db.close();
-    await updateInvestigation(investigationId, {});
-  }
-
-  async function deleteInvestigation(id) {
-    const db = await open();
-    const tx = db.transaction(["items", "investigations"], "readwrite");
-    const index = tx.objectStore("items").index("byInvestigation");
-    const keys = await done(index.getAllKeys(id));
-    for (const key of keys) tx.objectStore("items").delete(key);
-    tx.objectStore("investigations").delete(id);
-    await transactionDone(tx);
-    db.close();
-  }
-
-  function toMarkdown(investigation, items) {
-    const lines = [`# ${investigation.title}`, "", `Статус: ${investigation.status === "closed" ? "закрыто" : "открыто"}`, `Обновлено: ${investigation.updatedAt}`];
-    if (investigation.tags.length) lines.push(`Теги: ${investigation.tags.join(", ")}`);
-    if (investigation.notes) lines.push("", "## Заметки", "", investigation.notes);
-    lines.push("", "## События", "");
-    for (const item of items) lines.push(`- ${item.timestamp} — ${item.label}`);
-    return `${lines.join("\n")}\n`;
-  }
-
-  global.KumApeInvestigations = Object.freeze({ addEvent, createInvestigation, deleteInvestigation, describeEvent, entityKeys, getInvestigation, listInvestigations, listItems, removeItem, open, toMarkdown, updateInvestigation });
-})(globalThis);
+function eventItem(event) {
+  const value = eventValue(event, ["ID", "event.id"]) || JSON.stringify(event);
+  return { type: "event", value, label: describeEvent(event), sourceEventUuid: eventValue(event, ["ID", "event.id"]), snapshot: event };
+}
+async function addEvent(workspaceId, event, source = {}) {
+  return repository.pinWorkspaceItem({ workspaceId, siemOrigin: source.uiOrigin, item: eventItem(event) });
+}
+// Existing product entry points call this small mapping facade; storage and CRUD are shared.
+globalThis.KumApeInvestigations = Object.freeze({ ...repository, eventItem, addEvent, describeEvent, entityKeys,
+  open: repository.openDatabase,
+  listInvestigations: repository.listWorkspaces,
+  getInvestigation: repository.getWorkspace,
+  createInvestigation: title => repository.createInvestigation({ title }),
+  updateInvestigation: repository.updateWorkspace,
+  deleteInvestigation: repository.deleteWorkspace,
+  listItems: async id => ((await repository.getWorkspace(id))?.items ?? []).map(item => ({ ...item, id: item.value, payload: item.snapshot, timestamp: new Date(globalThis.KumApeAdapter.eventTimestamp(item.snapshot)).toISOString(), entityKeys: entityKeys(item.snapshot) })),
+  toMarkdown: workspaceToMarkdown,
+});
