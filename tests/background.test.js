@@ -387,3 +387,24 @@ test("ThreatFox uses the common client through KumApe key and permission adapter
   const denied = background({ iocApiKeys: { threatfox: "key" } }, {}, undefined, false);
   assert.equal((await denied.message({ type: "ioc:lookup", provider: "threatfox", ioc: { type: "domain", value: "evil.example" } })).ok, false);
 });
+
+test("step search batches a wide process family without exceeding the SQL predicate limit", async () => {
+  const event = (id, pid, parent) => ({ ID: id, DeviceEventClassID: "4688", DeviceEventCategory: "Microsoft-Windows-Security-Auditing", DeviceHostName: "workstation.example.lan", DeviceCustomString5: String(pid), DeviceCustomString3: String(parent), Timestamp: "2026-09-07T10:01:00Z" });
+  const source = event("source", 20, 10);
+  const children = Array.from({ length: 18 }, (_, index) => event(`child-${index}`, 100 + index, 20));
+  const queries = [];
+  const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", apiToken: "synthetic" }, {}, async (_url, options) => {
+    const sql = JSON.parse(options.body).sql;
+    const predicate = sql.split(" WHERE ")[1].split(" ORDER BY ")[0];
+    assert.ok(predicate.length <= 4000, predicate.length);
+    queries.push(sql);
+    return Response.json({ events: [source, ...children] });
+  });
+  const opened = await app.message({ type: "process:open-graph", event: source });
+  const response = await app.message({ type: "process:request:run", id: opened.result.id, mode: "step" });
+  assert.equal(response.ok, true, response.error);
+  assert.ok(queries.length > 2, "second relation pass must span multiple requests");
+  assert.equal(response.result.graph.nodes.length, 19);
+  assert.equal(new Set(response.result.graph.nodes.map(node => node.id)).size, 19);
+  for (const child of children) assert.ok(response.result.graph.nodes.some(node => node.event.ID === child.ID));
+});

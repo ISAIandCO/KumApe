@@ -391,6 +391,26 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
     return predicates.length === 1 ? predicates[0] : `(${predicates.join(" OR ")})`;
   }
 
+  function permissionPattern(origin) {
+    const url = new URL(normalizeOrigin(origin));
+    return `${url.protocol}//${url.hostname}/*`;
+  }
+
+  function batchSearchConditions(conditions) {
+    const batches = [];
+    let current = "";
+    for (const condition of new Set(conditions)) {
+      const predicate = `(${condition})`;
+      buildEventsQuery(predicate);
+      const combined = current ? `${current} OR ${predicate}` : predicate;
+      if (combined.length > 4000) { batches.push(current); current = predicate; }
+      else current = combined;
+    }
+    if (current) batches.push(current);
+    if (!batches.length) throw new TypeError("Недопустимое условие поиска");
+    return batches;
+  }
+
   function buildEventsQuery(where, limit = DEFAULT_LIMIT, maxLimit = MAX_LIMIT) {
     const predicate = String(where ?? "").trim();
     if (!predicate || predicate.length > 4000 || /[;\0]/.test(predicate)) throw new TypeError("Недопустимое условие поиска");
@@ -614,6 +634,8 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
     DEFAULT_RANGE_SECONDS,
     KumaAdapter,
     buildEventsQuery,
+    batchSearchConditions,
+    permissionPattern,
     buildRelatedActions,
     clustersFromResponse,
     correlationRuleId,

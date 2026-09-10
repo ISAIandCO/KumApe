@@ -6,7 +6,7 @@ async function syncIocContent() {
   const { uiOrigin = "" } = await browser.storage.local.get("uiOrigin");
   let origin = "";
   try { if (uiOrigin) origin = globalThis.KumApeAdapter.normalizeOrigin(uiOrigin); } catch { /* Unconfigured host. */ }
-  const matches = origin ? [permissionPattern(origin)] : [];
+  const matches = origin ? [globalThis.KumApeAdapter.permissionPattern(origin)] : [];
   const allowed = origin && await browser.permissions.contains({ origins: matches });
   const scripts = await browser.scripting.getRegisteredContentScripts({ ids: [id] });
   if (scripts.length) await browser.scripting.unregisterContentScripts({ ids: [id] });
@@ -29,7 +29,7 @@ async function syncIocContent() {
 }
 let contentSync = Promise.resolve();
 function scheduleIocContent() {
-  contentSync = contentSync.then(syncIocContent).catch(() => {});
+  contentSync = contentSync.then(syncIocContent).catch(error => console.error("KumApe: не удалось обновить кнопки страницы", error));
 }
 browser.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.uiOrigin) scheduleIocContent();
