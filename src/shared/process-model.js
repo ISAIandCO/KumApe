@@ -153,7 +153,7 @@
       if (validRelations.length) clauses.push(`(${mappingWhere(mapping)} AND ${api.equalityWhere([mapping.host], source.host)} AND (${validRelations.join(" OR ")}))`);
     }
     if (!clauses.length) throw new Error("Нет полей для выбранного направления");
-    return { where: `(${clauses.join(" OR ")})` };
+    return { where: `(${clauses.join(" OR ")})`, clauses };
   }
 
   function mappingsFromLegacyProfiles(profiles) {

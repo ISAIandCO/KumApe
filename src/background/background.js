@@ -65,10 +65,7 @@ async function loadConfig() {
   return { ...config, token: apiToken || "", aiKey: typeof aiApiKey === "string" ? aiApiKey.trim() : "" };
 }
 
-function permissionPattern(origin) {
-  const url = new URL(adapterApi.normalizeOrigin(origin));
-  return `${url.protocol}//${url.hostname}/*`;
-}
+const permissionPattern = adapterApi.permissionPattern;
 
 function responseMessage(body, contentType) {
   if (!body) return "";
@@ -216,13 +213,22 @@ async function runProcessGraph(message) {
       const intent = query.where;
       const actions = intent.kind === "processes" ? [processApi.graphSearchAction(request.event, config.processMappings)]
         : intent.events.map(event => processApi.relatedAction(event, config.processMappings, intent.direction));
-      const where = actions.map(action => `(${action.where})`).join(" OR ");
+      const conditions = actions.flatMap(action => action.clauses ?? [action.where]);
+      const queries = adapterApi.batchSearchConditions(conditions);
       const period = { from: query.timeFrom, to: query.timeTo };
-      const key = JSON.stringify([where, period]);
+      const key = JSON.stringify([queries, period]);
       if (!pages.has(key)) {
-        const fetched = await (await adapter()).searchRelated({ where, period, signal: operation.signal }, request.event, request.rangeSeconds, limit, 10000);
-        const events = fetched.events.filter(event => normalize(event));
-        pages.set(key, { events, capped: fetched.events.length >= limit });
+        const events = [];
+        let capped = false;
+        const client = await adapter();
+        for (const where of queries) {
+          if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
+          const fetched = await client.searchRelated({ where, period, signal: operation.signal }, request.event, request.rangeSeconds, limit, 10000);
+          events.push(...fetched.events.filter(event => normalize(event)));
+          capped ||= fetched.events.length >= limit;
+        }
+        const unique = new Map(events.map(event => { const fact = normalize(event); return [JSON.stringify([fact.host, fact.recordId || fact.identity.id]), event]; }));
+        pages.set(key, { events: [...unique.values()], capped });
       }
       if (processOperations.get(message.id) !== operation) throw new Error("Загрузка отменена");
       const page = pages.get(key);

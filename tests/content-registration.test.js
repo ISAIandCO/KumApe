@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import { readFile, access } from "node:fs/promises";
 const source = await readFile(new URL("../src/background/content-registration.js", import.meta.url), "utf8");
 
@@ -10,8 +12,6 @@ test("automatic menu registration uses a Firefox host pattern and injects existi
   let permitted = true;
   const listen = { addListener() {} };
   const context = vm.createContext({ URL,
-    KumApeAdapter: { normalizeOrigin: (origin) => new URL(origin).origin },
-    permissionPattern: (origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; },
     browser: {
       storage: { local: { get: async () => local }, onChanged: listen },
       permissions: { contains: async () => permitted, onAdded: listen, onRemoved: listen },
@@ -26,6 +26,8 @@ test("automatic menu registration uses a Firefox host pattern and injects existi
       },
     },
   });
+  const adapter = buildSync({ entryPoints: [fileURLToPath(new URL("../src/shared/kuma-adapter.js", import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text;
+  vm.runInContext(adapter, context);
   vm.runInContext(source, context);
   await vm.runInContext("contentSync", context);
   assert.deepEqual(Array.from(registrations[0].matches), ["https://kuma.test/*"]);
