@@ -1,77 +1,93 @@
+import { createAiConversation } from "@isaiandco/ape-share-core/ai/conversation";
+import { addAiAttachment, normalizeAiChat } from "@isaiandco/ape-share-core/ai/chat";
 import { renderChatMessages } from "@isaiandco/ape-share-core/ui/chat-messages";
-import { requestPreparedAi } from './ai-request.js';
-import './ai-privacy.js';
+import { previewLocalAi, requestLocalAi } from "./ai-conversation.js";
 
-// Shared by event and investigation chats, following ApePatrol's persistent chat flow.
 export async function mountChat(root, key, context, additionalContext) {
-  let stored = (await browser.storage.local.get(key))[key];
-  if (!stored) {
-    try { stored = {messages:JSON.parse(sessionStorage.getItem(key) || "[]")}; } catch { stored = {}; }
-  }
-  const messages = globalThis.KumApeAiPrivacy.compactMessageContexts(Array.isArray(stored.messages) ? stored.messages.slice(-40) : []);
+  const document = root.ownerDocument;
   const make = (tag, text) => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
-  root.replaceChildren();
-  root.classList.add('ai-chat');
-  const title = make('h2', 'SEC AI Assistant');
-  const history = make('div'); history.className = 'chat-messages'; history.setAttribute('aria-live', 'polite');
-  const prompt = make('textarea'); prompt.placeholder = 'Что нужно проверить?'; prompt.value = stored.draft || ''; prompt.setAttribute('aria-label', 'Сообщение AI');
-  const previewButton = make('button', 'Сформировать точный payload');
-  const submit = make('button', 'Отправить проверенный payload'); submit.disabled = true;
-  const clear = make('button', 'Очистить диалог');
-  const details = make('details'); details.append(make('summary', 'Точный payload'));
-  const output = make('pre'); details.append(output);
-  const status = make('p'); status.setAttribute('role', 'status');
-  const actions = make('div'); actions.className = 'toolbar'; actions.append(previewButton, submit, clear);
-  const allow = make('input'); allow.type='checkbox';
-  const allowLabel = make('label'); allowLabel.append(allow,document.createTextNode(' Разрешить AI запрашивать дополнительный контекст с подтверждением'));
-  const requests = make('div');
-  root.append(title, history, prompt, allowLabel, requests, actions, status, details);
-  let extra = null;
-  let prepared = null;
-  const save = () => {
-    while (messages.length > 40 || (messages.length > 2 && new TextEncoder().encode(JSON.stringify(messages)).byteLength > 2 * 1024 * 1024)) messages.shift();
-    return browser.storage.local.set({ [key]: { messages, draft: prompt.value.slice(0,20000) } });
-  };
-  const request = async (message) => { const result = await browser.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error || 'Ошибка AI'); return result; };
+  const stored = (await browser.storage.local.get(key))[key] ?? {};
+  const previousContexts = [];
+  const messages = (stored.messages ?? []).map(message => {
+    if (message.role !== "user" || !message.context) return message;
+    previousContexts.push(message.context);
+    return { ...message, attachments: [{ type: "event", value: "event-context", label: "Контекст событий", snapshot: globalThis.KumApeAiPrivacy.mergeContexts(previousContexts, "full").payload }] };
+  });
+  let chat = normalizeAiChat({ ...stored, messages });
+  const listeners = [];
+  let destroyed = false;
+  function listen(target, event, handler) { target.addEventListener(event, handler); listeners.push(() => target.removeEventListener(event, handler)); }
+  async function contextAttachments(getContext) {
+    const input = await getContext();
+    const event = input.event ?? (await browser.runtime.sendMessage({ type: "ai:request:get", id: input.id })).preview?.payload;
+    if (!event) throw new Error("Контекст события недоступен");
+    const previous = [...chat.messages, { attachments: chat.pendingAttachments }].flatMap(message => (message.attachments ?? []).filter(item => item.type === "event").map(item => item.snapshot));
+    const merged = globalThis.KumApeAiPrivacy.mergeContexts([...previous, event], "full");
+    const events = Array.isArray(merged.payload.Events) ? merged.payload.Events : [merged.payload];
+    return [{ type: "event", value: "event-context", label: `${events.length} событий`, snapshot: merged.payload }];
+  }
+  root.replaceChildren(); root.classList.add("ai-chat");
+  const history = make("div"); history.className = "chat-messages"; history.setAttribute("aria-live", "polite");
+  const prompt = make("textarea"); prompt.placeholder = "Что нужно проверить?"; prompt.setAttribute("aria-label", "Сообщение AI");
+  const previewButton = make("button", "Сформировать точный payload"), submit = make("button", "Отправить проверенный payload"), clear = make("button", "Очистить диалог");
+  const output = make("pre"), details = make("details"), status = make("p"), requests = make("div"), pending = make("div");
+  status.setAttribute("role", "status"); details.append(make("summary", "Точный payload"), output);
+  const allow = make("input"); allow.type = "checkbox";
+  const allowLabel = make("label"); allowLabel.append(allow, document.createTextNode(" Разрешить AI запрашивать дополнительный контекст с подтверждением"));
+  const actions = make("div"); actions.className = "toolbar"; actions.append(previewButton, submit, clear);
+  root.append(make("h2", "SEC AI Assistant"), history, pending, prompt, allowLabel, requests, actions, status, details);
+  const save = value => browser.storage.local.set({ [key]: value ?? chat });
+  const controller = createAiConversation({
+    read: () => chat, write: value => { chat = value; render(); }, scope: () => key,
+    async request() {
+      const attachments = chat.pendingAttachments.length ? chat.pendingAttachments : await contextAttachments(context);
+      return { contextType: "context", conversation: [...chat.messages, { role: "user", content: chat.draft.trim() || "Проанализируй приложенные данные", attachments }], allowSiemTools: chat.allowSiemTools };
+    },
+    preview: previewLocalAi, complete: requestLocalAi, persist: save,
+    changed() {
+      if (destroyed) return;
+      for (const node of [previewButton, prompt, allow, clear, ...requests.querySelectorAll("button")]) node.disabled = controller.busy;
+      submit.disabled = controller.busy || !controller.reviewed;
+    },
+  });
+  const report = error => { if (!destroyed) status.textContent = error.message; };
   function render() {
-    renderChatMessages(history, messages, { messageClass: "message" });
+    renderChatMessages(history, chat.messages, { messageClass: "message" });
+    prompt.value = chat.draft; allow.checked = chat.allowSiemTools;
+    pending.textContent = chat.pendingAttachments.map(item => item.label).join(" · ");
+    requests.replaceChildren();
+    for (const call of chat.pendingToolCalls) {
+      const approve = make("button", "Подготовить дополнительный контекст");
+      approve.disabled = controller.busy;
+      approve.addEventListener("click", async () => {
+        if (controller.busy) return;
+        controller.invalidate();
+        try {
+          const attachments = await contextAttachments(additionalContext ?? context);
+          if (destroyed) return;
+          for (const item of attachments) chat = addAiAttachment(chat, item);
+          chat.pendingToolCalls = []; chat.draft = "Учти дополнительный контекст и продолжи анализ";
+          controller.invalidate(); await save(); render();
+          status.textContent = "Контекст подготовлен. Проверьте payload перед отправкой";
+        } catch (error) { report(error); }
+      });
+      requests.append(make("p", `AI запросил контекст: ${call.arguments.reason ?? call.name}`), approve);
+    }
     history.scrollTop = history.scrollHeight;
   }
-  prompt.addEventListener('input', () => { prepared = null; submit.disabled = true; save().catch(error => status.textContent = error.message); });
-  previewButton.addEventListener('click', async () => {
-    submit.disabled = true; previewButton.disabled = true; prompt.disabled = true; allow.disabled = true; clear.disabled = true;
-    try {
-      if (!prompt.value.trim()) throw new Error('Введите вопрос');
-      prepared = { ...(extra || await context()), allowTools:allow.checked, messages: [...messages, { role: 'user', content: prompt.value.trim() }] };
-      const result = await request({ ...prepared, type: 'ai:preview' });
-      prepared.preview = result.preview;
-      output.textContent = JSON.stringify(JSON.parse(result.preview.body), null, 2);
-      status.textContent = result.preview.endpoint; submit.disabled = false;
-    } catch (error) { prepared = null; status.textContent = error.message; }
-    finally { previewButton.disabled = false; prompt.disabled = false; allow.disabled = false; clear.disabled = false; }
+  listen(prompt, "input", () => { chat.draft = prompt.value; controller.invalidate(); save().catch(report); });
+  listen(allow, "change", () => { chat.allowSiemTools = allow.checked; controller.invalidate(); save().catch(report); });
+  listen(previewButton, "click", async () => {
+    try { const result = await controller.preview(); if (result) { output.textContent = result.preview.serialized; status.textContent = result.endpoint; } }
+    catch (error) { report(error); }
   });
-  submit.addEventListener('click', async () => {
-    if (!prepared) return;
-    submit.disabled = true; previewButton.disabled = true; prompt.disabled = true; clear.disabled = true; allow.disabled = true;
-    try {
-      status.textContent = 'Модель отвечает…';
-      const response = await requestPreparedAi(prepared.preview, { allowTools: prepared.allowTools });
-      messages.push({ ...prepared.messages.at(-1), ...(prepared.preview.context ? { context: prepared.preview.context } : {}) }, { role: 'assistant', content: response.content });
-      requests.replaceChildren();
-      for (const call of response.toolCalls || []) {
-        const text=make('p',`AI запросил дополнительный контекст: ${call.arguments}`);
-        const approve=make('button','Подготовить дополнительный контекст');
-        approve.addEventListener('click',async()=>{
-          try { extra=await (additionalContext || context)(); prompt.value='Учти дополнительный контекст и продолжи анализ'; submit.disabled=true; prepared=null; status.textContent='Контекст подготовлен. Сформируйте и проверьте payload перед отправкой'; approve.disabled=true; }
-          catch(error) {status.textContent=error.message;}
-        });
-        requests.append(text,approve);
-      }
-      prompt.value = ''; await save(); render(); prepared = null; extra = null; status.textContent = 'Ответ получен';
-    } catch (error) { status.textContent = error.message; }
-    finally { previewButton.disabled = false; prompt.disabled = false; clear.disabled = false; allow.disabled = false; }
+  listen(submit, "click", async () => {
+    try { status.textContent = "Модель отвечает…"; await controller.send({ confirmed: true }); if (!destroyed) status.textContent = "Ответ получен"; }
+    catch (error) { report(error); }
   });
-  allow.addEventListener('change',()=>{prepared=null;submit.disabled=true;});
-  clear.addEventListener('click', async () => { messages.length = 0; prepared = null; extra = null; prompt.value = ''; requests.replaceChildren(); output.textContent = ''; status.textContent = ''; submit.disabled = true; await save(); render(); });
-  render();
+  listen(clear, "click", async () => {
+    chat = normalizeAiChat({ allowSiemTools: chat.allowSiemTools }); controller.invalidate(); output.textContent = ""; await save(); render();
+  });
+  render(); controller.invalidate();
+  return () => { destroyed = true; controller.destroy(); for (const remove of listeners) remove(); };
 }

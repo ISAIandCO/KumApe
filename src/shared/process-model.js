@@ -1,4 +1,3 @@
-import { buildProcessGraph } from "@isaiandco/ape-share-core/graph/process-model";
 (function initProcessModel(global) {
   "use strict";
 
@@ -124,49 +123,11 @@ import { buildProcessGraph } from "@isaiandco/ape-share-core/graph/process-model
     const mapping = mappingForEvent(event, mappings);
     const fields = processFields(event, mapping);
     if (!fields?.host || !fields.pid) return null;
-    return { raw: event, recordId: fields.eventRecordId || api.valuesForAliases(event, ["ID"])[0] || "", host: fields.host.toLowerCase(), time: fields.timestamp,
+    return { raw: event, recordId: api.valuesForAliases(event, ["ID"])[0] || fields.eventRecordId || "", host: fields.host.toLowerCase(), time: fields.timestamp,
       identity: { id: eventKey(fields), kind: fields.processGuid ? "guid" : "pid", value: fields.processGuid || fields.pid },
       references: [fields.processGuid && { kind: "guid", value: fields.processGuid.toLowerCase() }, { kind: "pid", value: fields.pid }].filter(Boolean),
       parentRefs: [fields.parentGuid && { kind: "guid", value: fields.parentGuid.toLowerCase() }, fields.parentPid && { kind: "pid", value: fields.parentPid }].filter(Boolean),
     };
-  }
-
-  function buildGraph(events, sourceEvent, mappings = BUILTIN_PROCESS_MAPPINGS) {
-    const normalized = normalizeMappings(mappings);
-    const combined = [sourceEvent, ...(Array.isArray(events) ? events : [])];
-    const nodes = [];
-    const keys = new Set();
-    const eventIds = new Set();
-    for (const [index, event] of combined.entries()) {
-      const mapping = normalized.find((candidate) => mappingMatches(event, candidate));
-      if (!mapping) continue;
-      const eventId = api.valuesForAliases(event, ["ID"])[0];
-      if (eventId && eventIds.has(eventId)) continue;
-      const fields = processFields(event, mapping);
-      if (!fields.host || !fields.pid) continue;
-      const id = eventKey(fields);
-      if (keys.has(id)) continue;
-      keys.add(id);
-      if (eventId) eventIds.add(eventId);
-      nodes.push({ id, ...fields, event: event, mappingName: mapping.name, source: index === 0 });
-    }
-    let sourceNodeId = nodes.find((node) => node.source)?.id || null;
-    const facts = nodes.map(node => ({ raw: node.event, recordId: node.eventRecordId, host: node.host.toLowerCase(), time: node.timestamp,
-      identity: { id: node.id, kind: node.processGuid ? "guid" : "pid", value: node.processGuid || node.pid },
-      references: [node.processGuid && { kind: "guid", value: node.processGuid.toLowerCase() }, { kind: "pid", value: node.pid }].filter(Boolean),
-      parentRefs: [node.parentGuid && { kind: "guid", value: node.parentGuid.toLowerCase() }, node.parentPid && { kind: "pid", value: node.parentPid }].filter(Boolean),
-    }));
-    const linked = buildProcessGraph(facts, { maxNodes: 10000, sourceEvent: facts.find(fact => fact.identity.id === sourceNodeId) });
-    const edges = linked.nodes.filter(node => node.parentId).map(node => ({ source: node.parentId, target: node.id }));
-    const byId = new Map(linked.nodes.map(node => [node.id, node]));
-    for (const node of nodes) {
-      const linkedNode = byId.get(node.id);
-      node.parentId = linkedNode?.parentId ?? null;
-      node.depth = linkedNode?.depth ?? 0;
-      node.evidence = linkedNode?.evidence ?? [node.event];
-    }
-
-    return { nodes, edges, sourceNodeId };
   }
 
   function relatedAction(event, mappings, direction = "both") {
@@ -195,15 +156,6 @@ import { buildProcessGraph } from "@isaiandco/ape-share-core/graph/process-model
     return { where: `(${clauses.join(" OR ")})` };
   }
 
-  function connectedGraph(graph, anchorId, direction = "both") {
-    const ids = new Set([anchorId]);
-    for (const edge of graph.edges) {
-      if (["parents", "both"].includes(direction) && edge.target === anchorId) ids.add(edge.source);
-      if (["children", "both"].includes(direction) && edge.source === anchorId) ids.add(edge.target);
-    }
-    return { ...graph, nodes: graph.nodes.filter(n => ids.has(n.id)), edges: graph.edges.filter(e => ids.has(e.source) && ids.has(e.target)) };
-  }
-
   function mappingsFromLegacyProfiles(profiles) {
     const result = [];
     for (const profile of Array.isArray(profiles) ? profiles : []) {
@@ -225,5 +177,5 @@ import { buildProcessGraph } from "@isaiandco/ape-share-core/graph/process-model
     return result;
   }
 
-  global.KumApeProcess = Object.freeze({ normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, connectedGraph, normalizePid, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
+  global.KumApeProcess = Object.freeze({ normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, normalizePid, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
 })(globalThis);

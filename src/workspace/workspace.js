@@ -1,7 +1,7 @@
 import { downloadText as download } from "@isaiandco/ape-share-core/ui/download";
 import { mountWorkspace } from "@isaiandco/ape-share-core/ui/workspace";
 import { workspaceToJson, workspaceToMarkdown } from "@isaiandco/ape-share-core/investigation/model";
-import { previewWorkspaceAi, requestWorkspaceAi } from "../shared/workspace-ai.js";
+import { previewLocalAi, requestLocalAi } from "../shared/ai-conversation.js";
 import { createEntityGraph } from "./entity-model.js";
 
 const db = globalThis.KumApeInvestigations;
@@ -18,7 +18,7 @@ const downloadText = (text, options) => download(text, options, { download({ url
   const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
 } });
 const view = mountWorkspace(document, {
-  filenamePrefix: "kumape", downloadText, workspaceToJson, workspaceToMarkdown, requestAiCompletion: requestWorkspaceAi,
+  filenamePrefix: "kumape", downloadText, workspaceToJson, workspaceToMarkdown, requestAiCompletion: requestLocalAi,
   loadForceSettings() { try { return JSON.parse(localStorage.getItem(FORCE_KEY) || "null"); } catch { return null; } },
   saveForceSettings(settings) { try { localStorage.setItem(FORCE_KEY, JSON.stringify(settings)); } catch { /* optional preference */ } },
   async request(message) {
@@ -36,7 +36,7 @@ const view = mountWorkspace(document, {
       case "workspace:item:add": await db.addEvent(message.workspaceId, message.item.snapshot, { uiOrigin: config.uiOrigin }); return {};
       case "workspace:chat:get": return { chat: await db.getWorkspaceAiChat(message.id) };
       case "workspace:chat:save": return { chat: await db.saveWorkspaceAiChat(message.id, message.chat) };
-      case "ai:preview": return previewWorkspaceAi(message);
+      case "ai:preview": return previewLocalAi(message);
       default: throw new Error(`Неизвестная операция: ${message.type}`);
     }
   },

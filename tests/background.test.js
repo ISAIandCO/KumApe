@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
+import { webcrypto } from "node:crypto";
 
 const files = ["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function storage(data) {
@@ -19,7 +20,7 @@ function storage(data) {
 function background(local = {}, session = {}, fetchImpl = () => { throw new Error("Unexpected network call"); }, granted = true) {
   let handler;
   const createdTabs = [];
-  const context = vm.createContext({ URL, AbortController, setTimeout, clearTimeout, TextEncoder, btoa,
+  const context = vm.createContext({ URL, AbortController, setTimeout, clearTimeout, TextEncoder, btoa, crypto: webcrypto, structuredClone,
     fetch: fetchImpl,
     browser: {
       storage: { local: storage(local), session: storage(session) },
@@ -163,7 +164,9 @@ test("local AI keeps event data out of URLs and sends only the prepared payload 
   const url = new URL(app.createdTabs[0].url);
   assert.equal(url.pathname, "/ai/assistant.html");
   assert.equal(url.href.includes("host01"), false);
-  const response = await app.message({ type: "ai:chat", id: url.searchParams.get("id"), messages: [{ role: "user", content: "Что произошло?" }] });
+  const input = { id: url.searchParams.get("id"), messages: [{ role: "user", content: "Что произошло?" }] };
+  const { preview } = await app.message({ ...input, type: "ai:preview" });
+  const response = await app.message({ ...input, type: "ai:chat", preview });
   assert.equal(response.content, "Локальный ответ");
   assert.match(JSON.stringify(body), /host01/);
   assert.doesNotMatch(JSON.stringify(body), /SECRET-RAW|SECRET-COOKIE/);
@@ -352,7 +355,7 @@ test("AI sends unique event context once while retaining text history", async ()
   const body = JSON.parse(response.preview.body);
   assert.equal(JSON.stringify(body).match(/host01/g)?.length, 1);
   assert.equal(JSON.stringify(body).includes("Контекст сообщения"), false);
-  assert.equal(body.messages.at(-1).content, "Третий вопрос");
+  assert.match(body.messages.at(-1).content, /^Третий вопрос/);
   assert.equal(response.preview.context, null);
 });
 
@@ -360,6 +363,7 @@ test("AI accepts context above 200 KB and caps it at 2 MiB", async () => {
   const app = background({ ai: { enabled: true, endpoint: "http://127.0.0.1:8080/v1", model: "model", privacyMode: "strict" } });
   const accepted = await app.message({ type: "ai:preview", event: { Message: "x".repeat(300_000) }, messages: [{ role: "user", content: "Analyze" }] });
   assert.equal(accepted.ok, true, accepted.error);
+  assert.ok(accepted.preview.body.length > 300_000);
   const rejected = await app.message({ type: "ai:preview", event: { Message: "x".repeat(2 * 1024 * 1024) }, messages: [{ role: "user", content: "Analyze" }] });
   assert.equal(rejected.ok, false);
   assert.match(rejected.error, /2 МБ/);

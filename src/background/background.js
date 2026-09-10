@@ -1,5 +1,6 @@
 import { rangeAroundEvents } from "@isaiandco/ape-share-core/values/time";
-import { encodeBody } from "@isaiandco/ape-share-core/ai/payload";
+import { previewLocalAi, requestLocalAi } from "../shared/ai-conversation.js";
+import { localAiEndpoint } from "../shared/ai-endpoint.js";
 import { createProcessWorkflow } from "@isaiandco/ape-share-core/graph/workflow";
 "use strict";
 
@@ -274,49 +275,26 @@ async function storedRequest(prefix, id) {
   return value;
 }
 
-function aiEndpoint(config) {
-  const url = new URL(config.ai?.endpoint || "");
-  if (!/^https?:$/.test(url.protocol) || !adapterApi.isLocalNetworkHost(url.hostname)) {
-    throw new Error("AI endpoint должен находиться на этом компьютере или в локальной сети");
-  }
-  return url;
-}
+function aiEndpoint(config) { return localAiEndpoint(config.ai?.endpoint); }
 
+// Legacy message envelope; preparation, privacy, limits and transport use the same chat adapter.
 async function runAi(message) {
   const config = await loadConfig();
-  if (!config.ai?.enabled) throw new Error("Локальный AI выключен в настройках");
-  const endpoint = globalThis.KumApeAiTransport.chatEndpoint(aiEndpoint(config), { expandBase: true });
-  if (!await browser.permissions.contains({ origins: [permissionPattern(endpoint.origin)] })) throw new Error("Нет разрешения Firefox для локального AI endpoint");
   const mode = config.ai.privacyMode || "strict";
   const baseContext = message.event ? globalThis.KumApeAiPrivacy.preview(message.event, mode) : await storedRequest("aiRequest", message.id);
   const history = Array.isArray(message.messages) ? message.messages.slice(-20) : [];
-  const previousContexts = history.filter((item) => item?.role !== "assistant" && item?.context).map((item) => item.context);
-  const request = globalThis.KumApeAiPrivacy.mergeContexts([...previousContexts, baseContext.payload], mode);
-  if (request.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает лимит 2 МБ. Используйте Strict, Redacted или сократите число событий.");
-  const messages = history.map((item) => ({
-    role: item?.role === "assistant" ? "assistant" : "user",
-    content: String(item?.content || "").slice(0, 20000),
-  })).filter((item) => item.content);
-  if (!messages.length) throw new Error("Введите вопрос");
-  const tools = message.allowTools ? [{type:"function",function:{name:"get_additional_context",description:"Request more read-only investigation or event context from the operator. No data is fetched without their approval.",parameters:{type:"object",properties:{reason:{type:"string"}},required:["reason"],additionalProperties:false}}}] : undefined;
-  const encoded = encodeBody({
-        tools,
-        model: config.ai.model || "local-model", stream: false,
-        messages: [
-          { role: "system", content: "Ты SOC-аналитик. Анализируй только приложенные события KUMA. Не выдумывай отсутствующие факты. Отвечай по-русски, кратко и структурированно." },
-          { role: "user", content: `Контекст событий KUMA:\n${JSON.stringify(request.payload)}` },
-          ...messages,
-        ],
-      });
-  if (encoded.byteLength > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Запрос AI превышает лимит 2 МБ; сократите контекст или историю");
-  const body = encoded.serialized;
-  if (message.type === "ai:preview") return { body, endpoint: endpoint.href, context: globalThis.KumApeAiPrivacy.contextDelta(baseContext.payload, previousContexts, mode) };
-  if (message.preview && (message.preview.body !== body || message.preview.endpoint !== endpoint.href)) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
-  const reply = await globalThis.KumApeAiTransport.requestChatCompletion(endpoint, body, { apiKey: config.aiKey || "" });
-  const content = typeof reply?.content === "string" ? reply.content : "";
-  const toolCalls = message.allowTools ? (reply?.tool_calls || []).filter(call=>call?.function?.name === "get_additional_context").slice(0,4).map(call=>({name:call.function.name,arguments:String(call.function.arguments || "{}").slice(0,4000)})) : [];
-  if (!content.trim() && !toolCalls.length) throw new Error("Локальный AI вернул пустой ответ");
-  return {content,toolCalls};
+  const previousContexts = history.filter(item => item?.role !== "assistant" && item?.context).map(item => item.context);
+  const context = globalThis.KumApeAiPrivacy.mergeContexts([...previousContexts, baseContext.payload], mode);
+  if (context.bytes > globalThis.KumApeAiPrivacy.AI_CONTEXT_MAX_BYTES) throw new Error("Контекст AI превышает лимит 2 МБ");
+  const conversation = history.map(item => ({ role: item?.role === "assistant" ? "assistant" : "user", content: String(item?.content || "").slice(0, 20000) })).filter(item => item.content);
+  const lastUser = conversation.findLast(item => item.role === "user");
+  if (!lastUser) throw new Error("Введите вопрос");
+  lastUser.attachments = [{ type: "event", value: "event-context", label: "Контекст событий", snapshot: context.payload }];
+  const input = { conversation, contextType: "context", allowSiemTools: message.allowTools };
+  const reviewed = await previewLocalAi(input);
+  if (message.type === "ai:preview") return { body: reviewed.preview.serialized, endpoint: reviewed.endpoint, context: globalThis.KumApeAiPrivacy.contextDelta(baseContext.payload, previousContexts, mode) };
+  if (!message.preview || message.preview.body !== reviewed.preview.serialized || message.preview.endpoint !== reviewed.endpoint) throw new Error("Настройки или контекст изменились. Сформируйте payload заново");
+  return requestLocalAi({ ...input, confirmed: true, previewHash: reviewed.preview.hash, previewEndpoint: reviewed.endpoint });
 }
 
 browser.tabs.onRemoved?.addListener(async tabId => {
