@@ -1,3 +1,4 @@
+import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
 (function initKumaAdapter(global) {
   "use strict";
 
@@ -517,14 +518,7 @@
     return results;
   }
 
-  function iocLinks(ioc) {
-    const value = encodeURIComponent(ioc.value);
-    return [
-      { provider: "Kaspersky OpenTIP", url: `https://opentip.kaspersky.com/${value}/` },
-      { provider: "VirusTotal", url: `https://www.virustotal.com/gui/search/${value}` },
-      ...(ioc.type === "ip" ? [{ provider: "AbuseIPDB", url: `https://www.abuseipdb.com/check/${value}` }] : []),
-    ];
-  }
+  function iocLinks(ioc) { return reportLinks(ioc); }
 
   class KumaAdapter {
     constructor(config, request) {
@@ -589,7 +583,7 @@
       if (!clusterId) throw new Error("KUMA не вернула ни одного доступного кластера хранения");
       const body = {
         clusterID: clusterId,
-        period: eventPeriod(event, rangeSeconds),
+        period: action.period ?? eventPeriod(event, rangeSeconds),
         emptyFields: true,
         rawTimestamps: true,
         sql: buildEventsQuery(action.where, limit, maxLimit),
@@ -599,6 +593,7 @@
         path: "/api/v3/events",
         method: "POST",
         token: this.token,
+        signal: action.signal,
         body,
       });
       return { clusterId, query: body.sql, period: body.period, events: eventsFromResponse(response), raw: response };

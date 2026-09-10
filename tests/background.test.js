@@ -3,9 +3,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
 
-const files = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map((path) => (["shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js"].includes(path) ? buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text : readFile(new URL(`../src/${path}`, import.meta.url), "utf8"))));
+const files = ["shared/kuma-adapter.js", "shared/process-model.js", "shared/useful-filters.js", "shared/ai-privacy.js", "shared/ioc-providers.js", "background/ioc-lookup.js", "background/background.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function storage(data) {
   return {
     async get(keys) {
@@ -277,16 +276,19 @@ test("step mode queries selected relations, merges expansions and rejects foreig
  const source=event('source','20','10','01'),parent=event('parent','10','1','00'),child=event('child','30','20','02'),foreign=event('foreign','99','1','00');
  let calls=0;
  const app=background({uiOrigin:'https://kuma.test',apiOrigin:'https://kuma.test:7223',clusterId:'c',apiToken:'synthetic'}, {}, async(url,options)=>{
-   const query=JSON.parse(options.body).sql; assert.match(query,/DeviceHostName = 'pc'/);assert.doesNotMatch(query,/(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
+   const body = JSON.parse(options.body);
+   assert.match(body.period.from, /^2026-09-07T/); assert.match(body.period.to, /Z$/);
+   assert.ok(Date.parse(body.period.to) > Date.parse(body.period.from));
+   const query=body.sql; assert.match(query,/DeviceHostName = 'pc'/);assert.doesNotMatch(query,/(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
    calls++; return Response.json({events:calls===1?[source,parent,foreign]:[child,foreign]});
  });
  const opened=await app.message({type:'process:open-graph',event:source});const id=opened.result.id;
  const first=await app.message({type:'process:request:run',id,mode:'step'});assert.equal(first.ok,true,first.error);
- assert.deepEqual([...first.result.graph.nodes.map(n=>n.pid)].sort(),['10','20']);
+ assert.deepEqual([...first.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
  const sourceId=first.result.graph.sourceNodeId;
  const expanded=await app.message({type:'process:expand',id,nodeId:sourceId,direction:'children'});assert.equal(expanded.ok,true,expanded.error);
  assert.deepEqual([...expanded.result.graph.nodes.map(n=>n.pid)].sort(),['10','20','30']);
- const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,2);
+ const rejected=await app.message({type:'process:expand',id,nodeId:'not-in-graph',direction:'parents'});assert.equal(rejected.ok,false);assert.equal(calls,3);
 });
 
 test("graph nodes fall back to the universal KUMA ID when the mapped ID is unavailable", async () => {

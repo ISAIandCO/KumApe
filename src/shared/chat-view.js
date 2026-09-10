@@ -1,4 +1,4 @@
-import { renderMarkdown } from './markdown.js';
+import { renderChatMessages } from "@isaiandco/ape-share-core/ui/chat-messages";
 import { requestPreparedAi } from './ai-request.js';
 import './ai-privacy.js';
 
@@ -34,13 +34,7 @@ export async function mountChat(root, key, context, additionalContext) {
   };
   const request = async (message) => { const result = await browser.runtime.sendMessage(message); if (!result?.ok) throw new Error(result?.error || 'Ошибка AI'); return result; };
   function render() {
-    history.replaceChildren();
-    for (const message of messages) {
-      const card = make('article'); card.className = `message ${message.role}`; card.append(make('strong', message.role === 'user' ? 'Вы' : 'SEC AI Assistant'));
-      const content = make('div'); content.className = 'markdown-body';
-      if (message.role === 'assistant') renderMarkdown(content, message.content); else content.textContent = message.content;
-      card.append(content); history.append(card);
-    }
+    renderChatMessages(history, messages, { messageClass: "message" });
     history.scrollTop = history.scrollHeight;
   }
   prompt.addEventListener('input', () => { prepared = null; submit.disabled = true; save().catch(error => status.textContent = error.message); });

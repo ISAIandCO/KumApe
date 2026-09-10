@@ -1,9 +1,10 @@
+import { buildSync } from "esbuild";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
 
-const sources = await Promise.all(["shared/kuma-adapter.js", "shared/process-model.js"].map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+const sources = ["shared/kuma-adapter.js", "shared/process-model.js"].map(path => buildSync({ entryPoints: [fileURLToPath(new URL(`../src/${path}`, import.meta.url))], bundle: true, write: false, format: "iife", platform: "browser" }).outputFiles[0].text);
 function api() { const context = vm.createContext({ URL, TextEncoder }); for (const source of sources) vm.runInContext(source, context); return context.KumApeProcess; }
 const mapping = { name: "4688 custom", eventIdField: "DeviceEventClassID", eventIdValue: "4688", host: "HostX", pid: "PidX", parentPid: "ParentX", processGuid: "GuidX", parentGuid: "ParentGuidX", image: "ImageX", commandLine: "CmdX", user: "UserX", eventRecordId: "IdX" };
 const event = (id, pid, parentPid, time, host = "pc", extra = {}) => ({ DeviceEventClassID: "4688", HostX: host, PidX: pid, ParentX: parentPid, ImageX: `${id}.exe`, IdX: id, Timestamp: time, ...extra });

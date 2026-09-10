@@ -1,9 +1,10 @@
+import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate } from "@isaiandco/ape-share-core/filters/templates";
 (function initUsefulFilters(global) {
   "use strict";
 
   const api = global.KumApeAdapter;
   const processApi = global.KumApeProcess;
-  const TIME_RANGES = Object.freeze({ "5m": 300, "15m": 900, "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000 });
+
   const PLACEHOLDER = /\$\{(@?[A-Za-z][A-Za-z0-9_]*)\}/g;
   const RENDER_PLACEHOLDER = /('?)\$\{(@?[A-Za-z][A-Za-z0-9_]*)\}\1/g;
   const INTEGER_FIELD = /^(?:BytesIn|BytesOut|DestinationPort|DestinationProcessID|DestinationTranslatedPort|DeviceProcessID|DeviceReceiptTime|EndTime|FileCreateTime|FileModificationTime|FileSize|OldFileCreateTime|OldFileModificationTime|OldFileSize|SourcePort|SourceProcessID|SourceTranslatedPort|StartTime|Timestamp|Type|BaseEventCount|DeviceDirection|DeviceCustom(?:Date|Number)\d+|Flex(?:Date|Number)\d+)$/i;
@@ -97,9 +98,7 @@
       : filter);
   }
 
-  function requiredTemplateFields(template) {
-    return [...new Set([...String(template).matchAll(PLACEHOLDER)].map((match) => match[1]))];
-  }
+  function requiredTemplateFields(template) { return requiredFields(template, PLACEHOLDER); }
 
   function normalizeFilterTemplate(filter, index = 0) {
     if (!filter || typeof filter !== "object" || Array.isArray(filter)) throw new TypeError(`Фильтр ${index + 1}: ожидается объект`);
@@ -148,18 +147,16 @@
       const value = api.valuesForAliases(event, group?.aliases || [])[0] || "";
       return [field, value ? api.equalityWhere(group.queryFields, value) : ""];
     }));
-    const missing = fields.filter((field) => !values.get(field)).map((field) => {
-      if (!field.startsWith("@")) return field;
-      const group = groups.get(field.slice(1));
-      return group?.aliases?.join(" / ") || field;
+    const rendered = renderTemplate(template, { pattern: PLACEHOLDER, renderPattern: RENDER_PLACEHOLDER,
+      resolve: field => values.get(field) || null,
+      missingLabel: field => field.startsWith("@") ? groups.get(field.slice(1))?.aliases?.join(" / ") || field : field,
+      render: (resolved, match, quote, field) => {
+        if (field.startsWith("@")) return `(${resolved.get(field)})`;
+        if (INTEGER_FIELD.test(field) || FLOAT_FIELD.test(field)) return resolved.get(field);
+        return `'${api.escapeSqlString(resolved.get(field))}'`;
+      },
     });
-    if (missing.length) return { ok: false, missing, where: null };
-    const where = String(template).replace(RENDER_PLACEHOLDER, (match, quote, field) => {
-      if (field.startsWith("@")) return `(${values.get(field)})`;
-      if (INTEGER_FIELD.test(field) || FLOAT_FIELD.test(field)) return values.get(field);
-      return `'${api.escapeSqlString(values.get(field))}'`;
-    });
-    return { ok: true, missing: [], where };
+    return { ok: rendered.ok, missing: rendered.missing, where: rendered.query };
   }
 
   function processGraphFilter(event, processMappings) {

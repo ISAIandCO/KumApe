@@ -1,3 +1,4 @@
+import { buildProcessGraph } from "@isaiandco/ape-share-core/graph/process-model";
 (function initProcessModel(global) {
   "use strict";
 
@@ -118,6 +119,18 @@
     return `pid:${fields.host.toLowerCase()}:${fields.pid}:${fields.timestamp}:${fields.image.toLowerCase()}`;
   }
 
+  function normalizeEvent(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
+    if (!event) return null;
+    const mapping = mappingForEvent(event, mappings);
+    const fields = processFields(event, mapping);
+    if (!fields?.host || !fields.pid) return null;
+    return { raw: event, recordId: fields.eventRecordId || api.valuesForAliases(event, ["ID"])[0] || "", host: fields.host.toLowerCase(), time: fields.timestamp,
+      identity: { id: eventKey(fields), kind: fields.processGuid ? "guid" : "pid", value: fields.processGuid || fields.pid },
+      references: [fields.processGuid && { kind: "guid", value: fields.processGuid.toLowerCase() }, { kind: "pid", value: fields.pid }].filter(Boolean),
+      parentRefs: [fields.parentGuid && { kind: "guid", value: fields.parentGuid.toLowerCase() }, fields.parentPid && { kind: "pid", value: fields.parentPid }].filter(Boolean),
+    };
+  }
+
   function buildGraph(events, sourceEvent, mappings = BUILTIN_PROCESS_MAPPINGS) {
     const normalized = normalizeMappings(mappings);
     const combined = [sourceEvent, ...(Array.isArray(events) ? events : [])];
@@ -138,26 +151,21 @@
       nodes.push({ id, ...fields, event: event, mappingName: mapping.name, source: index === 0 });
     }
     let sourceNodeId = nodes.find((node) => node.source)?.id || null;
-    const guidIndex = new Map(nodes.filter((node) => node.processGuid).map((node) => [`${node.host.toLowerCase()}\0${node.processGuid.toLowerCase()}`, node]));
-    const pidIndex = new Map();
+    const facts = nodes.map(node => ({ raw: node.event, recordId: node.eventRecordId, host: node.host.toLowerCase(), time: node.timestamp,
+      identity: { id: node.id, kind: node.processGuid ? "guid" : "pid", value: node.processGuid || node.pid },
+      references: [node.processGuid && { kind: "guid", value: node.processGuid.toLowerCase() }, { kind: "pid", value: node.pid }].filter(Boolean),
+      parentRefs: [node.parentGuid && { kind: "guid", value: node.parentGuid.toLowerCase() }, node.parentPid && { kind: "pid", value: node.parentPid }].filter(Boolean),
+    }));
+    const linked = buildProcessGraph(facts, { maxNodes: 10000, sourceEvent: facts.find(fact => fact.identity.id === sourceNodeId) });
+    const edges = linked.nodes.filter(node => node.parentId).map(node => ({ source: node.parentId, target: node.id }));
+    const byId = new Map(linked.nodes.map(node => [node.id, node]));
     for (const node of nodes) {
-      const key = `${node.host.toLowerCase()}\0${node.pid}`;
-      if (!pidIndex.has(key)) pidIndex.set(key, []);
-      pidIndex.get(key).push(node);
+      const linkedNode = byId.get(node.id);
+      node.parentId = linkedNode?.parentId ?? null;
+      node.depth = linkedNode?.depth ?? 0;
+      node.evidence = linkedNode?.evidence ?? [node.event];
     }
-    for (const candidates of pidIndex.values()) candidates.sort((a, b) => a.timestamp - b.timestamp);
-    const edges = [];
-    for (const child of nodes) {
-      let parent = child.parentGuid ? guidIndex.get(`${child.host.toLowerCase()}\0${child.parentGuid.toLowerCase()}`) : null;
-      if (!parent && !child.parentGuid && child.parentPid) {
-        const candidates = pidIndex.get(`${child.host.toLowerCase()}\0${child.parentPid}`) || [];
-        for (const candidate of candidates) {
-          if (candidate.id !== child.id && candidate.timestamp <= child.timestamp && child.timestamp - candidate.timestamp <= 86_400_000) parent = candidate;
-        }
-      }
-      if (parent && parent.id !== child.id) edges.push({ source: parent.id, target: child.id });
-    }
-    if (!sourceNodeId && nodes.length) sourceNodeId = nodes[0].id;
+
     return { nodes, edges, sourceNodeId };
   }
 
@@ -217,5 +225,5 @@
     return result;
   }
 
-  global.KumApeProcess = Object.freeze({ BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, connectedGraph, normalizePid, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
+  global.KumApeProcess = Object.freeze({ normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, connectedGraph, normalizePid, buildGraph, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
 })(globalThis);
