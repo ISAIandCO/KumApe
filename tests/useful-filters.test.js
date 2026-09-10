@@ -10,7 +10,7 @@ function api() { const context = vm.createContext({ URL, TextEncoder }); for (co
 test("catalog explains unavailable filters and builds useful Windows predicates", () => {
   const filters = api().buildUsefulFilters({ DeviceEventClassID: "4688", DeviceEventCategory: "Microsoft-Windows-Security-Auditing", DeviceHostName: "host01", DestinationProcessID: "4120", SourceProcessID: "2032", DestinationProcessName: "powershell.exe" });
   assert.equal(filters.find((item) => item.id === "process-on-host").applicable, true);
-  assert.match(filters.find((item) => item.id === "process-on-host").where, /DeviceEventClassID IN \('4688', '1', 'EXECVE'\)/);
+  assert.match(filters.find((item) => item.id === "process-on-host").where, /DeviceEventClassID IN \('4688', '1'\)/);
   assert.match(filters.find((item) => item.id === "powershell-host").where, /DeviceProcessName ILIKE '%powershell\.exe'/);
   assert.match(filters.find((item) => item.id === "process-relatives").where, /DeviceEventClassID = '4688'/);
   assert.equal(filters.find((item) => item.id === "events-by-hash").applicable, false);
@@ -55,4 +55,27 @@ test("legacy numeric placeholders and built-in OR chains migrate to typed compac
 test("filter settings reject unsafe SQL and duplicate ids", () => {
   assert.throws(() => api().normalizeFilterTemplates([{ id: "x", template: "Field = ${Field}; DROP TABLE events" }]), /SQL-шаблон/);
   assert.throws(() => api().normalizeFilterTemplates([{ id: "x", template: "Field = ${Field}" }, { id: "x", template: "Other = ${Other}" }]), /Повторяется id/);
+});
+
+test("Windows-only templates are absent for Unix and unknown sources, including saved defaults", () => {
+  const filters = api();
+  const saved = JSON.parse(JSON.stringify(filters.BUILTIN_FILTERS));
+  saved.forEach(item => delete item.platforms);
+  for (const event of [{ DeviceProduct: "Linux", DeviceHostName: "h" }, { DeviceHostName: "h" }, { destinationprocessname: "/usr/bin/bash", DeviceHostName: "h" }]) {
+    const result = filters.buildUsefulFilters(event, undefined, undefined, saved);
+    assert.equal(result.some(item => item.id === "service-install-host"), false);
+    assert.equal(result.some(item => item.id === "command-line-4688"), false);
+    assert.equal(result.find(item => item.id === "host-events").applicable, true);
+  }
+  assert.equal(filters.buildUsefulFilters({ DeviceProduct: "Microsoft Windows", DeviceHostName: "h" }).find(item => item.id === "service-install-host").applicable, true);
+});
+
+test("mixed built-in templates use the detected OS while custom queries remain intact", () => {
+  const filters = api();
+  const event = { DeviceProduct: "Linux", DeviceHostName: "h" };
+  const query = filters.buildUsefulFilters(event).find(item => item.id === "process-on-host").where;
+  assert.match(query, /DeviceEventClassID IN \('EXECVE'\)/);
+  assert.doesNotMatch(query, /4688/);
+  const custom = [{ id: "process-on-host", template: "DeviceHostName = '${DeviceHostName}' AND DeviceEventClassID = 'CUSTOM'" }];
+  assert.match(filters.buildUsefulFilters(event, undefined, undefined, custom)[0].where, /CUSTOM/);
 });
