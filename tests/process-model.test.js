@@ -113,3 +113,20 @@ test("step queries use numeric literals for KUMA process ID fields and keep hex 
   assert.match(action.where, /SourceProcessID = 20/);
   assert.doesNotMatch(action.where, /(?:SourceProcessID|DestinationProcessID|DeviceProcessID) = '/);
 });
+
+test("Unix graph uses destination/source PIDs without DeviceProcessID", async () => {
+  const model = api();
+  const mappings = [model.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.eventIdValue === "EXECVE")];
+  const parent = { DeviceEventClassID: "EXECVE", DeviceHostName: "linux", ID: "parent", DestinationProcessID: 10, SourceProcessID: 1, Timestamp: "2026-09-14T10:00:00Z" };
+  const child = { ...parent, ID: "child", DestinationProcessID: 20, SourceProcessID: 10, Timestamp: "2026-09-14T10:01:00Z" };
+  assert.equal(model.graphSearchAction(child).source.pid, "20");
+  assert.equal(model.graphSearchAction(child).source.parentPid, "10");
+  assert.equal(model.graphSearchAction({ ...child, DeviceProcessID: 999 }).source.pid, "20");
+  assert.match(model.relatedAction(child, mappings, "parents").where, /DestinationProcessID = 10/);
+  assert.match(model.relatedAction(parent, mappings, "children").where, /SourceProcessID = 10/);
+  assert.doesNotMatch(model.relatedAction(child, mappings).where, /DeviceProcessID/);
+  for (const mode of ["broad", "step"]) {
+    const graph = await graphFor([parent, child], child, mappings, mode);
+    assert.ok(graph.edges.some(edge => edge.source === "event:linux:parent" && edge.target === "event:linux:child"));
+  }
+});

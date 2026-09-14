@@ -408,3 +408,21 @@ test("step search batches a wide process family without exceeding the SQL predic
   assert.equal(new Set(response.result.graph.nodes.map(node => node.id)).size, 19);
   for (const child of children) assert.ok(response.result.graph.nodes.some(node => node.event.ID === child.ID));
 });
+
+test("old built-in Unix mapping migrates persistently without replacing custom mappings", async () => {
+  const builtin = background().context.KumApeProcess.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.eventIdValue === "EXECVE");
+  const old = { ...builtin, pid: "DeviceProcessID" };
+  const custom = [
+    { ...old, name: "My Unix" },
+    { ...old, pid: "SourceProcessID", parentPid: "DestinationProcessID" },
+    { ...old, commandLine: "CustomCommand" },
+    { ...old, fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID" },
+  ];
+  const local = { processMappings: [old, ...custom] };
+  await background(local).message({ type: "config:get" });
+  assert.equal(local.processMappings[0].pid, "DestinationProcessID");
+  assert.deepEqual(local.processMappings.slice(1), custom);
+  await background(local).message({ type: "config:get" });
+  assert.equal(local.processMappings[0].pid, "DestinationProcessID");
+  assert.deepEqual(local.processMappings.slice(1), custom);
+});

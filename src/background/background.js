@@ -53,6 +53,17 @@ const keyMigration = (async () => {
       return categoriesMissing && builtin?.eventCategories ? { ...migrated, eventCategories: builtin.eventCategories } : migrated;
     });
   }
+  // Repair only the unchanged built-in EXECVE mapping, including legacy imports.
+  if (moved.processMappings) {
+    const unix = processApi.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.eventIdValue === "EXECVE");
+    const previous = { ...unix, pid: "DeviceProcessID" };
+    moved.processMappings = moved.processMappings.map(mapping => {
+      const unchanged = ["name", "eventIdField", "eventIdValue", ...processApi.FIELD_KEYS]
+        .every(key => (mapping[key] || "") === (previous[key] || ""));
+      const categoriesEmpty = Array.isArray(mapping.eventCategories) ? !mapping.eventCategories.length : !String(mapping.eventCategories || "").trim();
+      return unchanged && categoriesEmpty ? { ...mapping, pid: unix.pid } : mapping;
+    });
+  }
   if (local.usefulFilters) moved.usefulFilters = globalThis.KumApeFilters.migrateBuiltinFilters(local.usefulFilters);
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
   await browser.storage.session.remove(["apiToken", "iocApiKeys"]);
