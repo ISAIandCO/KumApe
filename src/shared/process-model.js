@@ -22,7 +22,7 @@
     }),
     Object.freeze({
       name: "Linux auditd EXECVE", eventIdField: "DeviceEventClassID", eventIdValue: "EXECVE",
-      host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID",
+      host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
       processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
       user: "SourceUserName", eventRecordId: "ID",
     }),
