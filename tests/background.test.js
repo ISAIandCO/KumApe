@@ -444,3 +444,18 @@ test("update adds SYSCALL execve once and opens graph despite an unusable legacy
   await background(local).message({ type: "config:get" });
   assert.equal(local.processMappings.length, 1);
 });
+
+test("previous SYSCALL profile broadens to all execve markers while retaining PID overrides", async () => {
+  const local = { syscallExecveMappingAdded: true, processMappings: [{
+    name: "Linux auditd SYSCALL / pt_siem_execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
+    eventCategories: ["pt_siem_execve"], host: "DeviceHostName", pid: "MyPid", parentPid: "MyParent",
+  }] };
+  const app = background(local);
+  await app.message({ type: "config:get" });
+  assert.equal(local.processMappings.length, 1);
+  assert.equal(local.processMappings[0].matchMode, "execve");
+  assert.equal(local.processMappings[0].pid, "MyPid");
+  const fields = app.context.KumApeProcess.graphSearchAction({ Message: "audit type=EXECVE", DeviceHostName: "linux-test", MyPid: "20", MyParent: "10" }, local.processMappings).source;
+  assert.equal(fields.pid, "20");
+  assert.equal(fields.parentPid, "10");
+});

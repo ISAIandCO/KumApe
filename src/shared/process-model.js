@@ -3,6 +3,7 @@
 
   const api = global.KumApeAdapter;
   const FIELD_KEYS = Object.freeze(["host", "pid", "parentPid", "processGuid", "parentGuid", "image", "commandLine", "user", "eventRecordId", "fallbackPid", "fallbackParentPid"]);
+  const EXECVE_FIELDS = Object.freeze(["Message", "Name", "DeviceEventCategory", "DeviceEventClassID"]);
   const NUMERIC_PID_FIELDS = /^(?:SourceProcessID|DestinationProcessID|DeviceProcessID|DeviceCustomNumber[1-3]|FlexNumber[1-2])$/i;
   const BUILTIN_PROCESS_MAPPINGS = Object.freeze([
     Object.freeze({
@@ -27,7 +28,7 @@
       user: "SourceUserName", eventRecordId: "ID",
     }),
     Object.freeze({
-      name: "Linux auditd SYSCALL / pt_siem_execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
+      name: "Linux auditd execve (любая нормализация)", matchMode: "execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
       eventCategories: ["pt_siem_execve"],
       host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
       processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
@@ -52,7 +53,10 @@
       const name = String(mapping.name ?? "").trim() || `Event ${index + 1}`;
       const eventIdValue = String(mapping.eventIdValue ?? "").trim();
       if (!eventIdValue || eventIdValue.length > 256) throw new TypeError(`${context}: укажите значение Event ID`);
+      const matchMode = mapping.matchMode || "exact";
+      if (!["exact", "execve"].includes(matchMode)) throw new TypeError(`${context}: неизвестный режим сопоставления`);
       const normalized = {
+        matchMode,
         name: name.slice(0, 120),
         eventIdField: safeField(mapping.eventIdField, true, context),
         eventIdValue,
@@ -70,12 +74,14 @@
 
   function mappingMatches(event, mapping) {
     if (api.valuesForAliases(event, ["Type"]).includes("3")) return false;
+    if (mapping.matchMode === "execve") return api.valuesForAliases(event, EXECVE_FIELDS).some(value => value.toLowerCase().includes("execve"));
     const eventIdMatches = api.valuesForAliases(event, [mapping.eventIdField]).some((value) => value.toLowerCase() === mapping.eventIdValue.toLowerCase());
     return eventIdMatches && (!mapping.eventCategories.length || api.valuesForAliases(event, ["DeviceEventCategory"])
       .some((value) => mapping.eventCategories.some((category) => value.toLowerCase() === category.toLowerCase())));
   }
 
   function mappingWhere(mapping) {
+    if (mapping.matchMode === "execve") return `(${EXECVE_FIELDS.map(field => `${field} ILIKE '%execve%'`).join(" OR ")})`;
     const predicates = [api.equalityWhere([mapping.eventIdField], mapping.eventIdValue)];
     if (mapping.eventCategories.length === 1) predicates.push(api.equalityWhere(["DeviceEventCategory"], mapping.eventCategories[0]));
     if (mapping.eventCategories.length > 1) predicates.push(`DeviceEventCategory IN (${mapping.eventCategories.map((value) => `'${api.escapeSqlString(value)}'`).join(", ")})`);
@@ -120,7 +126,7 @@
     if (!sourceMapping) throw new Error(`Для Event ID ${api.valuesForAliases(event, ["DeviceEventClassID"]).join(", ") || "(не найден)"} текущего события не задано сопоставление полей графа`);
     const source = processFields(event, sourceMapping);
     if (!source.host) throw new Error(`Профиль «${sourceMapping.name}»: в поле ${sourceMapping.host} не найден узел процесса`);
-    if (!source.pid) throw new Error(`Профиль «${sourceMapping.name}» (${sourceMapping.eventIdField}=${sourceMapping.eventIdValue}): не найден PID процесса; проверены поля ${[sourceMapping.pid, sourceMapping.fallbackPid].filter(Boolean).join(", ")}`);
+    if (!source.pid) throw new Error(`Профиль «${sourceMapping.name}» (${sourceMapping.matchMode === "execve" ? "execve в любом из четырёх полей" : `${sourceMapping.eventIdField}=${sourceMapping.eventIdValue}`}): не найден PID процесса; проверены поля ${[sourceMapping.pid, sourceMapping.fallbackPid].filter(Boolean).join(", ")}`);
     const clauses = normalized.map((mapping) => `(${mappingWhere(mapping)} AND ${api.equalityWhere([mapping.host], source.host)})`);
     return { kind: "processGraph", title: "Граф процессов", value: source.pid, where: clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`, sourceMapping, source };
   }

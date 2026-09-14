@@ -31,7 +31,7 @@ const ALLOWED_REQUESTS = Object.freeze([
 // One-time migration keeps keys entered before the persistent-storage update.
 const keyMigration = (async () => {
   const [local, session] = await Promise.all([
-    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings", "usefulFilters", "syscallExecveMappingAdded"]),
+    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings", "usefulFilters", "execveAnyFieldMappingAdded"]),
     browser.storage.session.get(["apiToken", "iocApiKeys"]),
   ]);
   const moved = {};
@@ -65,13 +65,16 @@ const keyMigration = (async () => {
     });
   }
   // Add the newly supported normalizer once, without resetting saved mappings.
-  if (!local.syscallExecveMappingAdded) {
-    const mappings = moved.processMappings || [];
+  if (!local.execveAnyFieldMappingAdded) {
+    const mappings = (moved.processMappings || []).map(mapping =>
+      mapping.name === "Linux auditd SYSCALL / pt_siem_execve" && mapping.eventIdField === "DeviceEventClassID" && mapping.eventIdValue === "SYSCALL"
+        ? { ...mapping, name: "Linux auditd execve (любая нормализация)", matchMode: "execve" } : mapping);
     const builtin = processApi.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.eventIdValue === "SYSCALL");
-    if (!mappings.some(mapping => mapping.name === builtin.name) && mappings.length < 50) {
+    moved.processMappings = mappings;
+    if (!mappings.some(mapping => mapping.matchMode === "execve") && mappings.length < 50) {
       moved.processMappings = [...mappings, builtin];
     }
-    moved.syscallExecveMappingAdded = true;
+    moved.execveAnyFieldMappingAdded = true;
   }
   if (local.usefulFilters) moved.usefulFilters = globalThis.KumApeFilters.migrateBuiltinFilters(local.usefulFilters);
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
