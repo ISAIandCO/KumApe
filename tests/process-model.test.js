@@ -130,3 +130,66 @@ test("Unix graph uses destination/source PIDs without DeviceProcessID", async ()
     assert.ok(graph.edges.some(edge => edge.source === "event:linux:parent" && edge.target === "event:linux:child"));
   }
 });
+
+const syscallExecve = {
+  Name: "execve", DeviceEventCategory: "pt_siem_execve", DeviceEventClassID: "SYSCALL",
+  SourceProcessID: "3094", SourceProcessName: "unconfined",
+  DestinationProcessID: "1685336", DestinationProcessName: "/usr/bin/passwd",
+  DeviceHostName: "linux-test", ID: "child", Timestamp: "2026-09-14T10:01:00Z",
+};
+
+test("SYSCALL execve normalizer opens graphs and searches the same event category", async () => {
+  const model = api();
+  const action = model.graphSearchAction(syscallExecve);
+  assert.equal(action.source.pid, "1685336");
+  assert.equal(action.source.parentPid, "3094");
+  assert.equal(action.source.image, "/usr/bin/passwd");
+  assert.match(action.where, /Message ILIKE '%execve%' OR Name ILIKE '%execve%' OR DeviceEventCategory ILIKE '%execve%' OR DeviceEventClassID ILIKE '%execve%'/);
+  const mappings = [action.sourceMapping];
+  assert.match(model.relatedAction(syscallExecve, mappings, "parents").where, /DestinationProcessID = 3094/);
+  assert.match(model.relatedAction(syscallExecve, mappings, "children").where, /SourceProcessID = 1685336/);
+  assert.doesNotMatch(model.relatedAction(syscallExecve, mappings).where, /DeviceProcessID/);
+  const parent = { ...syscallExecve, ID: "parent", DestinationProcessID: "3094", SourceProcessID: "1", Timestamp: "2026-09-14T10:00:00Z" };
+  for (const mode of ["broad", "step"]) {
+    const graph = await graphFor([parent, syscallExecve], syscallExecve, mappings, mode);
+    assert.ok(graph.edges.some(edge => edge.source === "event:linux-test:parent" && edge.target === "event:linux-test:child"));
+  }
+  assert.equal(model.mappingForEvent({ ...syscallExecve, Name: "openat", DeviceEventCategory: "other-syscall" }), null);
+});
+
+test("legacy matching profile without a PID cannot shadow a usable profile", () => {
+  const model = api();
+  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[2], name: "Legacy SYSCALL", eventIdValue: "SYSCALL", pid: "DeviceProcessID" };
+  const mappings = [legacy, ...model.BUILTIN_PROCESS_MAPPINGS];
+  assert.equal(model.graphSearchAction(syscallExecve, mappings).source.pid, "1685336");
+  assert.equal(model.normalizeEvent(syscallExecve, mappings).identity.value, "1685336");
+  assert.match(model.relatedAction(syscallExecve, mappings, "parents").where, /DestinationProcessID = 3094/);
+  // Explicit working custom mappings retain their configured precedence.
+  const customEvent = { ...syscallExecve, DeviceProcessID: "42" };
+  assert.equal(model.graphSearchAction(customEvent, mappings).source.pid, "42");
+  assert.throws(() => model.graphSearchAction(syscallExecve, [legacy]), /Legacy SYSCALL.*DeviceEventClassID=SYSCALL.*DeviceProcessID/);
+});
+
+test("execve is recognized independently in each of the four fields, case insensitively", () => {
+  const model = api();
+  const mapping = model.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.matchMode === "execve");
+  const base = { DeviceHostName: "linux-test", SourceProcessID: "3094", DestinationProcessID: "1685336" };
+  for (const field of ["Message", "Name", "DeviceEventCategory", "DeviceEventClassID"]) {
+    const event = { ...base, [field]: "prefix_ExEcVe_suffix" };
+    const action = model.graphSearchAction(event);
+    assert.equal(action.source.pid, "1685336", field);
+    assert.equal(action.sourceMapping.matchMode, "execve", field);
+    assert.equal(model.normalizeEvent(event).identity.value, "1685336", field);
+    const related = model.relatedAction(event, [mapping], "both").where;
+    assert.ok(related.includes(`${field} ILIKE '%execve%'`), field);
+    assert.doesNotMatch(related, /DeviceEventClassID = 'SYSCALL'|DeviceEventCategory = 'pt_siem_execve'/);
+    assert.match(related, /DestinationProcessID = 3094/);
+    assert.match(related, /SourceProcessID = 1685336/);
+  }
+  assert.equal(model.mappingForEvent(base), null);
+  assert.equal(model.mappingForEvent({ ...base, Message: "openat", Name: "open", DeviceEventClassID: "SYSCALL", DeviceEventCategory: "other" }), null);
+  assert.equal(model.mappingForEvent({ ...base, DestinationProcessName: "/tmp/execve" }), null);
+  assert.equal(model.mappingForEvent({ ...base, Name: "execve", Type: 3 }), null);
+  assert.equal(model.normalizeMappings([{ ...mapping, ...Object.fromEntries(Object.entries(mapping).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v])) }])[0].matchMode, "execve");
+  assert.throws(() => model.normalizeMappings([{ ...mapping, matchMode: "unknown" }]), /неизвестный режим/);
+});

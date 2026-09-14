@@ -21,13 +21,30 @@ function mappingCard(mapping = {}) {
   const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Удалить"; remove.addEventListener("click", () => card.remove());
   head.append(nameLabel, remove);
   const grid = document.createElement("div"); grid.className = "mapping-grid";
+  const modeLabel = document.createElement("label"); modeLabel.textContent = "Как определять событие";
+  const mode = document.createElement("select"); mode.dataset.key = "matchMode";
+  mode.add(new Option("Точное значение Event ID и категория", "exact"));
+  mode.add(new Option("execve в любом из четырёх полей", "execve"));
+  mode.value = mapping.matchMode || "exact";
+  modeLabel.append(mode); grid.append(modeLabel);
+  const hint = document.createElement("p");
+  hint.textContent = "Вхождение execve без учёта регистра в Message, Name, DeviceEventCategory или DeviceEventClassID. Достаточно одного поля.";
   for (const [key, title, required] of PROCESS_FIELDS) {
     const label = document.createElement("label"); label.textContent = title;
     const input = document.createElement("input"); input.dataset.key = key; input.value = Array.isArray(mapping[key]) ? mapping[key].join(", ") : mapping[key] || ""; input.required = required;
     input.placeholder = key === "eventIdValue" ? "4688" : ({ eventIdField: "DeviceEventClassID", eventCategories: "Microsoft-Windows-Security-Auditing", pid: "DeviceCustomString5", parentPid: "DeviceCustomString3" }[key] || "Необязательно");
     label.append(input); grid.append(label);
   }
-  card.append(head, grid); return card;
+  const updateMode = () => {
+    hint.hidden = mode.value !== "execve";
+    for (const key of ["eventIdField", "eventIdValue", "eventCategories"]) {
+      const input = grid.querySelector(`[data-key="${key}"]`);
+      input.disabled = mode.value === "execve";
+      if (input.disabled && !input.value && key !== "eventCategories") input.value = key === "eventIdField" ? "DeviceEventClassID" : "EXECVE";
+    }
+  };
+  mode.addEventListener("change", updateMode); updateMode();
+  card.append(head, grid, hint); return card;
 }
 
 function renderProcessMappings(mappings) {

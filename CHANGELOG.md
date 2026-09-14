@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.18
+
+- Добавлен профиль графа по вхождению execve без учёта регистра в любое из полей Message, Name, DeviceEventCategory, DeviceEventClassID; PID — DestinationProcessID, родитель — SourceProcessID. Профиль добавляется в сохранённые настройки при обновлении.
+- Совпавший профиль без узла/PID больше не перекрывает следующий подходящий профиль с заполненными полями. Ошибка графа указывает выбранный профиль.
+
 ## 0.3.17
 
 - Исправлен PID в стандартном профиле Linux auditd EXECVE: DestinationProcessID вместо DeviceProcessID; PID родителя — SourceProcessID.

@@ -421,8 +421,41 @@ test("old built-in Unix mapping migrates persistently without replacing custom m
   const local = { processMappings: [old, ...custom] };
   await background(local).message({ type: "config:get" });
   assert.equal(local.processMappings[0].pid, "DestinationProcessID");
-  assert.deepEqual(local.processMappings.slice(1), custom);
+  assert.deepEqual([...local.processMappings.slice(1, 1 + custom.length)], custom);
   await background(local).message({ type: "config:get" });
   assert.equal(local.processMappings[0].pid, "DestinationProcessID");
-  assert.deepEqual(local.processMappings.slice(1), custom);
+  assert.deepEqual([...local.processMappings.slice(1, 1 + custom.length)], custom);
+});
+
+test("update adds SYSCALL execve once and opens graph despite an unusable legacy match", async () => {
+  const legacy = { name: "Legacy SYSCALL", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL", host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID" };
+  const local = { uiOrigin: "https://kuma.test", processMappings: [legacy] };
+  const event = { Name: "execve", DeviceEventCategory: "pt_siem_execve", DeviceEventClassID: "SYSCALL", DeviceHostName: "linux-test", SourceProcessID: "3094", DestinationProcessID: "1685336", DestinationProcessName: "/usr/bin/passwd" };
+  const app = background(local);
+  const opened = await app.message({ type: "process:open-graph", event });
+  assert.equal(opened.ok, true, opened.error);
+  assert.equal(app.createdTabs.length, 1);
+  assert.deepEqual(local.processMappings[0], legacy);
+  assert.equal(local.processMappings.length, 2);
+  await background(local).message({ type: "config:get" });
+  assert.equal(local.processMappings.length, 2);
+  // An intentional subsequent removal stays removed.
+  local.processMappings.pop();
+  await background(local).message({ type: "config:get" });
+  assert.equal(local.processMappings.length, 1);
+});
+
+test("previous SYSCALL profile broadens to all execve markers while retaining PID overrides", async () => {
+  const local = { syscallExecveMappingAdded: true, processMappings: [{
+    name: "Linux auditd SYSCALL / pt_siem_execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
+    eventCategories: ["pt_siem_execve"], host: "DeviceHostName", pid: "MyPid", parentPid: "MyParent",
+  }] };
+  const app = background(local);
+  await app.message({ type: "config:get" });
+  assert.equal(local.processMappings.length, 1);
+  assert.equal(local.processMappings[0].matchMode, "execve");
+  assert.equal(local.processMappings[0].pid, "MyPid");
+  const fields = app.context.KumApeProcess.graphSearchAction({ Message: "audit type=EXECVE", DeviceHostName: "linux-test", MyPid: "20", MyParent: "10" }, local.processMappings).source;
+  assert.equal(fields.pid, "20");
+  assert.equal(fields.parentPid, "10");
 });
