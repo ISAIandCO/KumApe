@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.19
+
+- В настройках и рекомендуемых профилях остаётся один execve: проверка четырёх полей, DestinationProcessID / SourceProcessID. Старые дубли объединяются при обновлении.
+- Sysmon использует DestinationProcessID; у блока графа появилась отдельная кнопка сохранения без проверки остальных разделов.
+
+- Исправлен старый профиль Name=execve, использовавший PID audispd вместо запущенного процесса. При выборе профиля PID auditd/audispd больше не принимается за DestinationProcessID.
+- Добавлена проверка сохранения исходного узла и связей bash → who при обновлении ApeShareCore.
+
 ## 0.3.18
 
 - Добавлен профиль графа по вхождению execve без учёта регистра в любое из полей Message, Name, DeviceEventCategory, DeviceEventClassID; PID — DestinationProcessID, родитель — SourceProcessID. Профиль добавляется в сохранённые настройки при обновлении.

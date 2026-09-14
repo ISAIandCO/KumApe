@@ -190,10 +190,24 @@ $("#clear-profiles").addEventListener("click", () => {
   $("#field-profiles").value = "[]";
   show("Профили очищены. После сохранения останется общий набор нормализованных полей.");
 });
+$("#save-process-mappings").addEventListener("click", async () => {
+  const button = $("#save-process-mappings");
+  const status = $("#process-mappings-status");
+  button.disabled = true;
+  try {
+    const processMappings = processApi.normalizeMappings(collectProcessMappings());
+    await browser.storage.local.set({ processMappings, graphMappingsRevision: 1 });
+    status.textContent = "Настройки графа сохранены.";
+    status.style.color = "";
+  } catch (error) {
+    status.textContent = error.message;
+    status.style.color = "#d34b4b";
+  } finally { button.disabled = false; }
+});
 $("#add-process-mapping").addEventListener("click", () => $("#process-mappings").append(mappingCard({ eventIdField: "DeviceEventClassID" })));
 $("#restore-process-mappings").addEventListener("click", () => {
   renderProcessMappings(processApi.BUILTIN_PROCESS_MAPPINGS);
-  show(`Подставлено настроек графа: ${processApi.BUILTIN_PROCESS_MAPPINGS.length}. Нажмите «Сохранить», чтобы применить.`);
+  $("#process-mappings-status").textContent = "Подставлены рекомендуемые профили. Нажмите «Сохранить настройки графа».";
 });
 $("#restore-useful-filters").addEventListener("click", () => {
   $("#useful-filters").value = JSON.stringify(globalThis.KumApeFilters.BUILTIN_FILTERS, null, 2);

@@ -409,22 +409,22 @@ test("step search batches a wide process family without exceeding the SQL predic
   for (const child of children) assert.ok(response.result.graph.nodes.some(node => node.event.ID === child.ID));
 });
 
-test("old built-in Unix mapping migrates persistently without replacing custom mappings", async () => {
-  const builtin = background().context.KumApeProcess.BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.eventIdValue === "EXECVE");
-  const old = { ...builtin, pid: "DeviceProcessID" };
-  const custom = [
-    { ...old, name: "My Unix" },
-    { ...old, pid: "SourceProcessID", parentPid: "DestinationProcessID" },
-    { ...old, commandLine: "CustomCommand" },
-    { ...old, fallbackPid: "DestinationProcessID", fallbackParentPid: "SourceProcessID" },
-  ];
-  const local = { processMappings: [old, ...custom] };
+test("update consolidates all previous execve blocks into the recommended profile once", async () => {
+  const local = { execveAnyFieldMappingAdded: true, processMappings: [
+    { name: "Linux auditd EXECVE", eventIdField: "DeviceEventClassID", eventIdValue: "EXECVE", host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID" },
+    { name: "Linux auditd: EXECVE", eventIdField: "Name", eventIdValue: "execve", host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID" },
+    { name: "Linux auditd execve (любая нормализация)", matchMode: "execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL" },
+    { name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1", pid: "DeviceProcessID" },
+  ] };
   await background(local).message({ type: "config:get" });
+  assert.equal(local.processMappings.length, 2);
+  assert.equal(local.processMappings[0].matchMode, "execve");
   assert.equal(local.processMappings[0].pid, "DestinationProcessID");
-  assert.deepEqual([...local.processMappings.slice(1, 1 + custom.length)], custom);
+  assert.equal(local.processMappings[0].parentPid, "SourceProcessID");
+  assert.equal(local.processMappings[0].eventRecordId, "");
+  assert.equal(local.processMappings[1].pid, "DestinationProcessID");
   await background(local).message({ type: "config:get" });
-  assert.equal(local.processMappings[0].pid, "DestinationProcessID");
-  assert.deepEqual([...local.processMappings.slice(1, 1 + custom.length)], custom);
+  assert.equal(local.processMappings.length, 2);
 });
 
 test("update adds SYSCALL execve once and opens graph despite an unusable legacy match", async () => {
@@ -445,17 +445,27 @@ test("update adds SYSCALL execve once and opens graph despite an unusable legacy
   assert.equal(local.processMappings.length, 1);
 });
 
-test("previous SYSCALL profile broadens to all execve markers while retaining PID overrides", async () => {
-  const local = { syscallExecveMappingAdded: true, processMappings: [{
-    name: "Linux auditd SYSCALL / pt_siem_execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
-    eventCategories: ["pt_siem_execve"], host: "DeviceHostName", pid: "MyPid", parentPid: "MyParent",
-  }] };
-  const app = background(local);
-  await app.message({ type: "config:get" });
-  assert.equal(local.processMappings.length, 1);
-  assert.equal(local.processMappings[0].matchMode, "execve");
-  assert.equal(local.processMappings[0].pid, "MyPid");
-  const fields = app.context.KumApeProcess.graphSearchAction({ Message: "audit type=EXECVE", DeviceHostName: "linux-test", MyPid: "20", MyParent: "10" }, local.processMappings).source;
-  assert.equal(fields.pid, "20");
-  assert.equal(fields.parentPid, "10");
+
+test("migrated audit profile loads who with its parent and sibling instead of the forwarding daemon", async () => {
+  const legacy = { name: "Linux auditd: EXECVE", eventIdField: "Name", eventIdValue: "execve", host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID", image: "DestinationProcessName", eventRecordId: "ID" };
+  const local = { uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", apiToken: "synthetic", processMappings: [legacy] };
+  const who = { ID: "who", DeviceHostName: "linux-test", Name: "execve", DeviceEventClassID: "SYSCALL", DeviceEventCategory: "pt_siem_execve", DeviceProcessName: "audispd", DeviceProcessID: "1713", DestinationProcessName: "/usr/bin/who", DestinationProcessID: "339824", SourceProcessID: "333153", Timestamp: "1789381259984" };
+  const bash = { ...who, ID: "bash", DestinationProcessName: "/usr/bin/bash", DestinationProcessID: "333153", SourceProcessID: "100", Timestamp: "1789380883000" };
+  const sibling = { ...who, ID: "id", DestinationProcessName: "/usr/bin/id", DestinationProcessID: "339825", Timestamp: "1789381260000" };
+  const queries = [];
+  const app = background(local, {}, async (_url, options) => {
+    queries.push(JSON.parse(options.body).sql);
+    return Response.json({ events: [bash, sibling] });
+  });
+  const opened = await app.message({ type: "process:open-graph", event: who });
+  assert.equal(opened.ok, true, opened.error);
+  const result = await app.message({ type: "process:request:run", id: opened.result.id, mode: "step" });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(local.processMappings[0].pid, "DestinationProcessID");
+  assert.equal(result.result.sourceNodeId, "event:linux-test:who");
+  assert.equal(result.result.graph.nodes.length, 3);
+  assert.equal(result.result.graph.edges.length, 2);
+  assert.match(queries[0], /DestinationProcessID = 333153/);
+  assert.match(queries[0], /SourceProcessID = 339824/);
+  assert.ok(queries.every(query => !/ProcessID = 1713/.test(query)));
 });

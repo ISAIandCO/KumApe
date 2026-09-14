@@ -67,7 +67,7 @@ test("built-in process mappings qualify ambiguous Event IDs by category", () => 
   const model = api();
   const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[1], name: "Old custom mapping", eventCategories: [] };
   assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "qemu-ga" }, [legacy]), null);
-  const legacyAction = model.graphSearchAction({ DeviceEventClassID: "1", DeviceEventCategory: "Sysmon", DeviceHostName: "pc", DeviceProcessID: "20", SourceProcessID: "10" }, [legacy]);
+  const legacyAction = model.graphSearchAction({ DeviceEventClassID: "1", DeviceEventCategory: "Sysmon", DeviceHostName: "pc", DestinationProcessID: "20", SourceProcessID: "10" }, [legacy]);
   assert.equal(legacyAction.sourceMapping.name, "Old custom mapping");
   assert.match(legacyAction.where, /DeviceEventCategory IN \('Microsoft-Windows-Sysmon'/);
   assert.equal(model.mappingForEvent({ DeviceEventClassID: "1", DeviceEventCategory: "qemu-ga" }), null);
@@ -159,7 +159,7 @@ test("SYSCALL execve normalizer opens graphs and searches the same event categor
 
 test("legacy matching profile without a PID cannot shadow a usable profile", () => {
   const model = api();
-  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[2], name: "Legacy SYSCALL", eventIdValue: "SYSCALL", pid: "DeviceProcessID" };
+  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[2], name: "Legacy SYSCALL", matchMode: "exact", eventIdValue: "SYSCALL", pid: "DeviceProcessID" };
   const mappings = [legacy, ...model.BUILTIN_PROCESS_MAPPINGS];
   assert.equal(model.graphSearchAction(syscallExecve, mappings).source.pid, "1685336");
   assert.equal(model.normalizeEvent(syscallExecve, mappings).identity.value, "1685336");
@@ -192,4 +192,42 @@ test("execve is recognized independently in each of the four fields, case insens
   assert.equal(model.mappingForEvent({ ...base, Name: "execve", Type: 3 }), null);
   assert.equal(model.normalizeMappings([{ ...mapping, ...Object.fromEntries(Object.entries(mapping).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v])) }])[0].matchMode, "execve");
   assert.throws(() => model.normalizeMappings([{ ...mapping, matchMode: "unknown" }]), /неизвестный режим/);
+});
+
+test("audit collector PID cannot shadow the executed process in a saved legacy profile", async () => {
+  const model = api();
+  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[2], name: "Linux auditd: EXECVE", eventIdField: "Name", eventIdValue: "execve", pid: "DeviceProcessID" };
+  const mappings = [legacy, ...model.BUILTIN_PROCESS_MAPPINGS];
+  const who = { Name: "execve", DeviceEventClassID: "SYSCALL", DeviceEventCategory: "pt_siem_execve", DeviceHostName: "linux-test", DeviceProcessID: "1713", DeviceProcessName: "audispd", DestinationProcessID: "339824", SourceProcessID: "333153", DestinationProcessName: "/usr/bin/who", Timestamp: "1789381259984", ID: "who" };
+  const bash = { ...who, ID: "bash", DestinationProcessID: "333153", SourceProcessID: "100", DestinationProcessName: "/usr/bin/bash", Timestamp: "1789380883000" };
+  const sibling = { ...who, ID: "id", DestinationProcessID: "339825", DestinationProcessName: "/usr/bin/id", Timestamp: "1789381260000" };
+  assert.equal(model.graphSearchAction(who, mappings).source.pid, "339824");
+  assert.equal(model.graphSearchAction(who, mappings).source.parentPid, "333153");
+  const graph = await graphFor([bash, sibling], who, mappings, "step");
+  assert.equal(graph.sourceNodeId, "event:linux-test:who");
+  assert.equal(graph.nodes.length, 3);
+  assert.ok(graph.edges.some(edge => edge.source === "event:linux-test:bash" && edge.target === "event:linux-test:who"));
+  assert.ok(graph.edges.some(edge => edge.source === "event:linux-test:bash" && edge.target === "event:linux-test:id"));
+});
+
+test("source event survives a distinct earlier event using the same PID", async () => {
+  const model = api();
+  const source = { ID: "who", Name: "execve", DeviceHostName: "linux-test", DestinationProcessID: "339824", SourceProcessID: "333153", DestinationProcessName: "/usr/bin/who", Timestamp: "1789381259984" };
+  const other = { ...source, ID: "previous", DestinationProcessName: "/usr/bin/bash", Timestamp: "1789380883000" };
+  const graph = await graphFor([other], source, model.BUILTIN_PROCESS_MAPPINGS, "step");
+  assert.equal(graph.sourceNodeId, "event:linux-test:who");
+  assert.equal(graph.nodes.find(node => node.id === graph.sourceNodeId).event.DestinationProcessName, "/usr/bin/who");
+});
+
+test("recommended graph settings contain exactly one execve block matching the requested fields", () => {
+  const model = api();
+  const profiles = model.BUILTIN_PROCESS_MAPPINGS;
+  assert.equal(profiles.length, 3);
+  const unix = profiles.filter(profile => profile.name.toLowerCase().includes("execve"));
+  assert.equal(unix.length, 1);
+  const fields = { name: "Linux auditd: EXECVE", matchMode: "execve", eventIdField: "DeviceEventClassID", eventIdValue: "EXECVE", host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID", fallbackPid: "", fallbackParentPid: "", processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1", user: "SourceUserName", eventRecordId: "" };
+  for (const [key, value] of Object.entries(fields)) assert.equal(unix[0][key], value, key);
+  assert.equal(unix[0].eventCategories.length, 0);
+  assert.equal(profiles.find(profile => profile.eventIdValue === "1").pid, "DestinationProcessID");
+  assert.equal(model.consolidateProcessMappings(profiles).length, 3);
 });

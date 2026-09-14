@@ -17,24 +17,39 @@
     Object.freeze({
       name: "Sysmon Process Create 1", eventIdField: "DeviceEventClassID", eventIdValue: "1",
       eventCategories: ["Microsoft-Windows-Sysmon", "Microsoft-Windows-Sysmon/Operational", "Sysmon"],
-      host: "DeviceHostName", pid: "DeviceProcessID", parentPid: "SourceProcessID",
+      host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
       processGuid: "FlexString1", parentGuid: "FlexString2", image: "DeviceProcessName", commandLine: "DeviceCustomString2",
       user: "SourceUserName", eventRecordId: "ID",
     }),
     Object.freeze({
-      name: "Linux auditd EXECVE", eventIdField: "DeviceEventClassID", eventIdValue: "EXECVE",
+      name: "Linux auditd: EXECVE", matchMode: "execve", eventIdField: "DeviceEventClassID", eventIdValue: "EXECVE",
+      eventCategories: [],
       host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
-      processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
-      user: "SourceUserName", eventRecordId: "ID",
-    }),
-    Object.freeze({
-      name: "Linux auditd execve (любая нормализация)", matchMode: "execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
-      eventCategories: ["pt_siem_execve"],
-      host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
-      processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
-      user: "SourceUserName", eventRecordId: "ID",
+      fallbackPid: "", fallbackParentPid: "", processGuid: "", parentGuid: "",
+      image: "DestinationProcessName", commandLine: "FlexString1", user: "SourceUserName", eventRecordId: "",
     }),
   ]);
+
+  function consolidateProcessMappings(mappings) {
+    const execve = BUILTIN_PROCESS_MAPPINGS.find(mapping => mapping.matchMode === "execve");
+    const result = [];
+    let inserted = false;
+    for (const mapping of mappings) {
+      const isExecve = mapping.matchMode === "execve"
+        || String(mapping.name || "").toLowerCase().includes("execve")
+        || (EXECVE_FIELDS.some(field => field.toLowerCase() === String(mapping.eventIdField).toLowerCase())
+          && String(mapping.eventIdValue).toLowerCase().includes("execve"));
+      if (isExecve) {
+        if (!inserted) result.push(execve);
+        inserted = true;
+        continue;
+      }
+      const isSysmon = String(mapping.eventIdField).toLowerCase() === "deviceeventclassid" && String(mapping.eventIdValue) === "1";
+      result.push(isSysmon && mapping.pid === "DeviceProcessID" ? { ...mapping, pid: "DestinationProcessID" } : mapping);
+    }
+    if (!inserted && result.length < 50) result.push(execve);
+    return result;
+  }
 
   function safeField(value, required, context) {
     const field = String(value ?? "").trim();
@@ -90,12 +105,21 @@
 
   function mappingForEvent(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
     const matches = normalizeMappings(mappings).filter((mapping) => mappingMatches(event, mapping));
+    const collectorPid = api.valuesForAliases(event, EXECVE_FIELDS).some(value => value.toLowerCase().includes("execve"))
+      && /^(?:audispd|auditd)$/i.test(first(event, "DeviceProcessName").split(/[\\/]/).pop())
+      ? normalizePid(first(event, "DeviceProcessID")) : "";
+    const executedPid = normalizePid(first(event, "DestinationProcessID"));
+    const usable = matches.filter(mapping => {
+      if (!collectorPid || !executedPid || collectorPid === executedPid) return true;
+      const usesDevicePid = [mapping.pid, mapping.fallbackPid].some(field => field?.toLowerCase() === "deviceprocessid");
+      return !usesDevicePid || processFields(event, mapping).pid !== collectorPid;
+    });
     // A legacy matching profile with missing fields must not hide a usable one.
     // Preserve configured order when multiple profiles can read the event.
-    return matches.find(mapping => {
+    return usable.find(mapping => {
       const fields = processFields(event, mapping);
       return fields.host && fields.pid;
-    }) || matches[0] || null;
+    }) || usable[0] || null;
   }
 
   function first(event, field) {
@@ -142,8 +166,9 @@
     const mapping = mappingForEvent(event, mappings);
     const fields = processFields(event, mapping);
     if (!fields?.host || !fields.pid) return null;
-    return { raw: event, recordId: api.valuesForAliases(event, ["ID"])[0] || fields.eventRecordId || "", host: fields.host.toLowerCase(), time: fields.timestamp,
-      identity: { id: eventKey(fields), kind: fields.processGuid ? "guid" : "pid", value: fields.processGuid || fields.pid },
+    const recordId = api.valuesForAliases(event, ["ID"])[0] || fields.eventRecordId || "";
+    return { raw: event, recordId, host: fields.host.toLowerCase(), time: fields.timestamp,
+      identity: { id: eventKey({ ...fields, eventRecordId: fields.eventRecordId || recordId }), kind: fields.processGuid ? "guid" : "pid", value: fields.processGuid || fields.pid },
       references: [fields.processGuid && { kind: "guid", value: fields.processGuid.toLowerCase() }, { kind: "pid", value: fields.pid }].filter(Boolean),
       parentRefs: [fields.parentGuid && { kind: "guid", value: fields.parentGuid.toLowerCase() }, fields.parentPid && { kind: "pid", value: fields.parentPid }].filter(Boolean),
     };
@@ -196,5 +221,5 @@
     return result;
   }
 
-  global.KumApeProcess = Object.freeze({ normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, normalizePid, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
+  global.KumApeProcess = Object.freeze({ consolidateProcessMappings, normalizeEvent, BUILTIN_PROCESS_MAPPINGS, FIELD_KEYS, relatedAction, normalizePid, graphSearchAction, mappingForEvent, mappingsFromLegacyProfiles, normalizeMappings, processFields });
 })(globalThis);
