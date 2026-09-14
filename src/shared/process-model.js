@@ -26,6 +26,13 @@
       processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
       user: "SourceUserName", eventRecordId: "ID",
     }),
+    Object.freeze({
+      name: "Linux auditd SYSCALL / pt_siem_execve", eventIdField: "DeviceEventClassID", eventIdValue: "SYSCALL",
+      eventCategories: ["pt_siem_execve"],
+      host: "DeviceHostName", pid: "DestinationProcessID", parentPid: "SourceProcessID",
+      processGuid: "", parentGuid: "", image: "DestinationProcessName", commandLine: "FlexString1",
+      user: "SourceUserName", eventRecordId: "ID",
+    }),
   ]);
 
   function safeField(value, required, context) {
@@ -76,7 +83,13 @@
   }
 
   function mappingForEvent(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
-    return normalizeMappings(mappings).find((mapping) => mappingMatches(event, mapping)) || null;
+    const matches = normalizeMappings(mappings).filter((mapping) => mappingMatches(event, mapping));
+    // A legacy matching profile with missing fields must not hide a usable one.
+    // Preserve configured order when multiple profiles can read the event.
+    return matches.find(mapping => {
+      const fields = processFields(event, mapping);
+      return fields.host && fields.pid;
+    }) || matches[0] || null;
   }
 
   function first(event, field) {
@@ -103,11 +116,11 @@
 
   function graphSearchAction(event, mappings = BUILTIN_PROCESS_MAPPINGS) {
     const normalized = normalizeMappings(mappings);
-    const sourceMapping = normalized.find((mapping) => mappingMatches(event, mapping));
-    if (!sourceMapping) throw new Error("Для Event ID текущего события не задано сопоставление полей графа");
+    const sourceMapping = mappingForEvent(event, normalized);
+    if (!sourceMapping) throw new Error(`Для Event ID ${api.valuesForAliases(event, ["DeviceEventClassID"]).join(", ") || "(не найден)"} текущего события не задано сопоставление полей графа`);
     const source = processFields(event, sourceMapping);
-    if (!source.host) throw new Error(`В поле ${sourceMapping.host} не найден узел процесса`);
-    if (!source.pid) throw new Error(`В поле ${sourceMapping.pid} не найден PID процесса`);
+    if (!source.host) throw new Error(`Профиль «${sourceMapping.name}»: в поле ${sourceMapping.host} не найден узел процесса`);
+    if (!source.pid) throw new Error(`Профиль «${sourceMapping.name}» (${sourceMapping.eventIdField}=${sourceMapping.eventIdValue}): не найден PID процесса; проверены поля ${[sourceMapping.pid, sourceMapping.fallbackPid].filter(Boolean).join(", ")}`);
     const clauses = normalized.map((mapping) => `(${mappingWhere(mapping)} AND ${api.equalityWhere([mapping.host], source.host)})`);
     return { kind: "processGraph", title: "Граф процессов", value: source.pid, where: clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`, sourceMapping, source };
   }

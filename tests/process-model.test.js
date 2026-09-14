@@ -130,3 +130,42 @@ test("Unix graph uses destination/source PIDs without DeviceProcessID", async ()
     assert.ok(graph.edges.some(edge => edge.source === "event:linux:parent" && edge.target === "event:linux:child"));
   }
 });
+
+const syscallExecve = {
+  Name: "execve", DeviceEventCategory: "pt_siem_execve", DeviceEventClassID: "SYSCALL",
+  SourceProcessID: "3094", SourceProcessName: "unconfined",
+  DestinationProcessID: "1685336", DestinationProcessName: "/usr/bin/passwd",
+  DeviceHostName: "linux-test", ID: "child", Timestamp: "2026-09-14T10:01:00Z",
+};
+
+test("SYSCALL execve normalizer opens graphs and searches the same event category", async () => {
+  const model = api();
+  const action = model.graphSearchAction(syscallExecve);
+  assert.equal(action.source.pid, "1685336");
+  assert.equal(action.source.parentPid, "3094");
+  assert.equal(action.source.image, "/usr/bin/passwd");
+  assert.match(action.where, /DeviceEventClassID = 'SYSCALL' AND DeviceEventCategory = 'pt_siem_execve'/);
+  const mappings = [action.sourceMapping];
+  assert.match(model.relatedAction(syscallExecve, mappings, "parents").where, /DestinationProcessID = 3094/);
+  assert.match(model.relatedAction(syscallExecve, mappings, "children").where, /SourceProcessID = 1685336/);
+  assert.doesNotMatch(model.relatedAction(syscallExecve, mappings).where, /DeviceProcessID/);
+  const parent = { ...syscallExecve, ID: "parent", DestinationProcessID: "3094", SourceProcessID: "1", Timestamp: "2026-09-14T10:00:00Z" };
+  for (const mode of ["broad", "step"]) {
+    const graph = await graphFor([parent, syscallExecve], syscallExecve, mappings, mode);
+    assert.ok(graph.edges.some(edge => edge.source === "event:linux-test:parent" && edge.target === "event:linux-test:child"));
+  }
+  assert.equal(model.mappingForEvent({ ...syscallExecve, Name: "openat", DeviceEventCategory: "other-syscall" }), null);
+});
+
+test("legacy matching profile without a PID cannot shadow a usable profile", () => {
+  const model = api();
+  const legacy = { ...model.BUILTIN_PROCESS_MAPPINGS[2], name: "Legacy SYSCALL", eventIdValue: "SYSCALL", pid: "DeviceProcessID" };
+  const mappings = [legacy, ...model.BUILTIN_PROCESS_MAPPINGS];
+  assert.equal(model.graphSearchAction(syscallExecve, mappings).source.pid, "1685336");
+  assert.equal(model.normalizeEvent(syscallExecve, mappings).identity.value, "1685336");
+  assert.match(model.relatedAction(syscallExecve, mappings, "parents").where, /DestinationProcessID = 3094/);
+  // Explicit working custom mappings retain their configured precedence.
+  const customEvent = { ...syscallExecve, DeviceProcessID: "42" };
+  assert.equal(model.graphSearchAction(customEvent, mappings).source.pid, "42");
+  assert.throws(() => model.graphSearchAction(syscallExecve, [legacy]), /Legacy SYSCALL.*DeviceEventClassID=SYSCALL.*DeviceProcessID/);
+});
