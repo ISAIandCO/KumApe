@@ -1,5 +1,5 @@
 import { composeFilterCatalog, splitLegacyFilters } from "@isaiandco/ape-share-core/filters/catalog";
-import { validateSelectQuery, validatePlaceholderPositions } from "./sql-query.js";
+import { validatePlaceholderPositions, compactSql, prepareSelectQuery } from "./sql-query.js";
 import { detectEventPlatform, filterSupportsPlatform, normalizeFilterPlatforms } from "@isaiandco/ape-share-core/filters/platform";
 import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate } from "@isaiandco/ape-share-core/filters/templates";
 (function initUsefulFilters(global) {
@@ -109,24 +109,25 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
       : filter);
   }
 
-  function requiredTemplateFields(template) { return requiredFields(template, PLACEHOLDER); }
+  function requiredTemplateFields(template) { return requiredFields(compactSql(template), PLACEHOLDER); }
 
   function normalizeFilterTemplate(filter, index = 0) {
     if (!filter || typeof filter !== "object" || Array.isArray(filter)) throw new TypeError(`Фильтр ${index + 1}: ожидается объект`);
     const mode = filter.mode ?? "where";
     if (!["where", "sql"].includes(mode)) throw new TypeError(`Фильтр ${index + 1}: mode должен быть where или sql`);
-    const template = mode === "sql" ? validateSelectQuery(filter.template) : String(filter.template ?? "").trim();
-    if (!template || template.length > (mode === "sql" ? 64000 : 4000) || (mode === "where" && /[;\0]/.test(template))) throw new TypeError(`Фильтр ${index + 1}: недопустимый SQL-шаблон`);
+    const template = String(filter.template ?? "");
+    const executable = mode === "sql" ? prepareSelectQuery(template) : compactSql(template);
+    if (!executable || template.length > (mode === "sql" ? 64000 : 4000) || (mode === "where" && /[;\0]/.test(template))) throw new TypeError(`Фильтр ${index + 1}: недопустимый SQL-шаблон`);
     const requiredFields = requiredTemplateFields(template);
-    const placeholderCount = [...template.matchAll(PLACEHOLDER)].length;
-    validatePlaceholderPositions(template);
-    if (template.includes("${") && placeholderCount !== (template.match(/\$\{/g) || []).length) {
+    const placeholderCount = [...executable.matchAll(PLACEHOLDER)].length;
+    validatePlaceholderPositions(executable);
+    if (executable.includes("${") && placeholderCount !== (executable.match(/\$\{/g) || []).length) {
       throw new TypeError(`Фильтр ${index + 1}: используйте подстановки вида \${ИмяПоля}`);
     }
     requiredFields.forEach((field) => {
       if (field.startsWith("@")) {
         if (!LOGICAL_FIELDS.has(field)) throw new TypeError(`Фильтр ${index + 1}: неизвестная группа ${field}`);
-        if (template.includes(`'\${${field}}'`)) throw new TypeError(`Фильтр ${index + 1}: логическую группу ${field} не нужно заключать в кавычки`);
+        if (executable.includes(`'\${${field}}'`)) throw new TypeError(`Фильтр ${index + 1}: логическую группу ${field} не нужно заключать в кавычки`);
       } else api.sqlIdentifier(field);
     });
     const id = String(filter.id || `filter-${index + 1}`).replace(/[^a-z0-9_-]/gi, "-").slice(0, 64);
@@ -149,6 +150,7 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
   }
 
   function renderFilterTemplate(template, event, profiles = api.BUILTIN_FIELD_PROFILES) {
+    template = compactSql(template);
     const fields = requiredTemplateFields(template);
     const groups = new Map(api.fieldGroupsForEvent(event, profiles).map((group) => [group.kind, group]));
     const values = new Map(fields.map((field) => {
@@ -205,7 +207,7 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
       return {
         id: filter.id, source: filter.source, mode: filter.mode, title: filter.name, description: filter.description, type: "query", timeRange: filter.timeRange,
         rangeSeconds: TIME_RANGES[filter.timeRange], applicable: rendered.ok, missing: rendered.missing,
-        ...(rendered.ok ? (filter.mode === "sql" ? { sql: validateSelectQuery(rendered.where) } : { where: rendered.where }) : { reason: `Нет полей: ${rendered.missing.join(", ")}` }),
+        ...(rendered.ok ? (filter.mode === "sql" ? { sql: prepareSelectQuery(rendered.where) } : { where: rendered.where }) : { reason: `Нет полей: ${rendered.missing.join(", ")}` }),
       };
       } catch (error) { return unavailable(error); }
     });
@@ -229,6 +231,8 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     return migrated;
   }
 
-  global.KumApeFilters = Object.freeze({ normalizeFilterTemplate, migrateFilterCatalog, BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
+  function prepareFilterTemplate(filter) { return filter.mode === "sql" ? prepareSelectQuery(filter.template) : compactSql(filter.template); }
+
+  global.KumApeFilters = Object.freeze({ prepareFilterTemplate, normalizeFilterTemplate, migrateFilterCatalog, BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
 })(globalThis);
 

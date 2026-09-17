@@ -75,7 +75,10 @@ function renderClusters(clusters, selected = "") {
   select.value = selected;
 }
 
-const filterEditor = createFilterEditor({ root: $("#filter-editor"), builtins: globalThis.KumApeFilters.BUILTIN_FILTERS, normalize: globalThis.KumApeFilters.normalizeFilterTemplate, dialect: "kuma-sql", onStatus: show });
+const filterEditor = createFilterEditor({ root: $("#filter-editor"), builtins: globalThis.KumApeFilters.BUILTIN_FILTERS, normalize: globalThis.KumApeFilters.normalizeFilterTemplate, dialect: "kuma-sql", onStatus: show,
+  queryModes: [{ value: "where", label: "Условие WHERE" }, { value: "sql", label: "Полный SQL-запрос" }], defaultMode: "sql",
+  prepareTemplate: globalThis.KumApeFilters.prepareFilterTemplate,
+  queryHint: "Вставляйте многострочный SQL с отступами и комментариями -- или /* … */. Они сохраняются здесь, а перед выполнением удаляются. Подстановка: ${DestinationUserName}." });
 
 async function load() {
   const { config } = await send({ type: "config:get" });

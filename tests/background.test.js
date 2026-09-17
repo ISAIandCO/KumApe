@@ -470,9 +470,10 @@ test("migrated audit profile loads who with its parent and sibling instead of th
   assert.ok(queries.every(query => !/ProcessID = 1713/.test(query)));
 });
 
-test("full SQL reaches copy, API and native tab unchanged, with matching event period", async () => {
+test("formatted SQL reaches copy, API and native tab compiled, with matching event period", async () => {
   const sql = "SELECT DestinationAddress AS dest_ip, count(ID) AS attempts FROM `events` WHERE SourceAddress = '${SourceAddress}' GROUP BY DestinationAddress ORDER BY attempts DESC LIMIT 500";
-  const userFilters = [{ id: "summary", mode: "sql", template: sql, timeRange: "1h" }];
+  const formatted = sql.replace(" FROM", "\n-- comment with ignored ${MissingField}\nFROM").replace(" WHERE", " /* condition */\nWHERE");
+  const userFilters = [{ id: "summary", mode: "sql", template: formatted, timeRange: "1h" }];
   let sent;
   const local = { uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", apiToken: "synthetic", clusterId: "c", userFilters };
   const app = background(local, {}, async (url, options) => { sent = JSON.parse(options.body); return Response.json({ events: [{ dest_ip: "192.0.2.1", attempts: 7 }] }); });

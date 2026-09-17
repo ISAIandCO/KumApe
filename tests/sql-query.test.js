@@ -12,3 +12,13 @@ test("placeholder positions cannot turn values into SQL fragments", () => {
   for (const valid of ["Field = '${Field}'", "Field = ${Field}", "Message LIKE concat('%', ${Field}, '%')", "${@host} AND Type = 1"]) validatePlaceholderPositions(valid);
   for (const invalid of ["Field = '%${Field}%'", "`Field${Field}` = 1", "${Field}suffix = 1", "'x' -- ${Field}", "'x' /* ${Field} */", '"${Field}" = 1']) assert.throws(() => validatePlaceholderPositions(invalid));
 });
+
+test("SQL preparation removes comments and whitespace outside literals only", async () => {
+  const { compactSql, prepareSelectQuery } = await import("../src/shared/sql-query.js");
+  const sql = "-- заголовок\nSELECT\n  'два  пробела -- текст /* текст */' AS value,\n  CASE /* пояснение */ WHEN X >= 2 THEN 'a\\'--b' ELSE 'line\n  two' END AS result\nFROM `events` -- хвост\nWHERE User = '${User}'\nORDER BY Timestamp DESC; -- конец";
+  const prepared = prepareSelectQuery(sql);
+  assert.equal(prepared, "SELECT 'два  пробела -- текст /* текст */' AS value, CASE WHEN X >= 2 THEN 'a\\'--b' ELSE 'line\n  two' END AS result FROM `events` WHERE User = '${User}' ORDER BY Timestamp DESC");
+  assert.equal(compactSql("SELECT 1/* split */+2"), "SELECT 1 +2");
+  assert.throws(() => compactSql("SELECT 1 /* незакрыт"), /Незакрытый комментарий/);
+  assert.throws(() => prepareSelectQuery("SELECT 1; -- спрятано\nDELETE FROM events"));
+});

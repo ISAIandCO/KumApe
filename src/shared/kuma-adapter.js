@@ -1,4 +1,4 @@
-import { validateSelectQuery } from "./sql-query.js";
+import { prepareSelectQuery } from "./sql-query.js";
 import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
 (function initKumaAdapter(global) {
   "use strict";
@@ -420,7 +420,7 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
   }
 
   function buildActionQuery(action, limit, maxLimit) {
-    return action.sql !== undefined ? validateSelectQuery(action.sql) : buildEventsQuery(action.where, limit, maxLimit);
+    return action.sql !== undefined ? prepareSelectQuery(action.sql) : buildEventsQuery(action.where, limit, maxLimit);
   }
 
   function threatHuntingUrl(origin, sql, rangeOrPeriod = DEFAULT_RANGE_SECONDS) {
