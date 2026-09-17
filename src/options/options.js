@@ -1,3 +1,4 @@
+import { createFilterEditor } from "@isaiandco/ape-share-core/ui/filter-editor";
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
@@ -74,13 +75,15 @@ function renderClusters(clusters, selected = "") {
   select.value = selected;
 }
 
+const filterEditor = createFilterEditor({ root: $("#filter-editor"), builtins: globalThis.KumApeFilters.BUILTIN_FILTERS, normalize: globalThis.KumApeFilters.normalizeFilterTemplate, dialect: "kuma-sql", onStatus: show });
+
 async function load() {
   const { config } = await send({ type: "config:get" });
   $("#ui-origin").value = config.uiOrigin || "";
   $("#api-origin").value = config.apiOrigin || "";
   $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
   renderProcessMappings(config.processMappings || processApi.BUILTIN_PROCESS_MAPPINGS);
-  $("#useful-filters").value = JSON.stringify(config.usefulFilters || globalThis.KumApeFilters.BUILTIN_FILTERS, null, 2);
+  filterEditor.set(config);
   $("#ai-enabled").checked = Boolean(config.ai?.enabled);
   $("#ai-endpoint").value = config.ai?.endpoint || "http://127.0.0.1:8080/v1";
   $("#ai-model").value = config.ai?.model || "local-model";
@@ -106,13 +109,7 @@ async function save() {
   }
   const fieldProfiles = api.normalizeFieldProfiles(parsedProfiles);
   const processMappings = processApi.normalizeMappings(collectProcessMappings());
-  let parsedFilters;
-  try {
-    parsedFilters = JSON.parse($("#useful-filters").value);
-  } catch (error) {
-    throw new Error(`Полезные фильтры: некорректный JSON (${error.message})`);
-  }
-  const usefulFilters = globalThis.KumApeFilters.normalizeFilterTemplates(parsedFilters);
+  const filterSettings = filterEditor.read();
   const ai = { enabled: $("#ai-enabled").checked, endpoint: $("#ai-endpoint").value.trim(), model: $("#ai-model").value.trim() || "local-model", privacyMode: $("#ai-privacy").value };
   const origins = [uiOrigin, apiOrigin];
   if (ai.enabled) {
@@ -122,9 +119,9 @@ async function save() {
   }
   const granted = await browser.permissions.request({ origins: [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
-  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, processMappings, usefulFilters, ai });
+  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, processMappings, ...filterSettings, ai });
   $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
-  $("#useful-filters").value = JSON.stringify(usefulFilters, null, 2);
+  filterEditor.set(filterSettings);
   const token = $("#api-token").value.trim();
   if (token) {
     await browser.storage.local.set({ apiToken: token });
@@ -209,9 +206,12 @@ $("#restore-process-mappings").addEventListener("click", () => {
   renderProcessMappings(processApi.BUILTIN_PROCESS_MAPPINGS);
   $("#process-mappings-status").textContent = "Подставлены рекомендуемые профили. Нажмите «Сохранить настройки графа».";
 });
-$("#restore-useful-filters").addEventListener("click", () => {
-  $("#useful-filters").value = JSON.stringify(globalThis.KumApeFilters.BUILTIN_FILTERS, null, 2);
-  show(`Подставлено фильтров: ${globalThis.KumApeFilters.BUILTIN_FILTERS.length}. Нажмите «Сохранить», чтобы применить.`);
+$("#save-filters").addEventListener("click", async () => {
+  try {
+    const settings = filterEditor.read();
+    await browser.storage.local.set(settings);
+    filterEditor.set(settings); show("Фильтры сохранены.");
+  } catch (error) { show(error.message, true); }
 });
 $("#ui-origin").addEventListener("change", () => {
   if ($("#api-origin").value) return;

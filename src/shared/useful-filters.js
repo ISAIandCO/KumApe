@@ -1,3 +1,5 @@
+import { composeFilterCatalog, splitLegacyFilters } from "@isaiandco/ape-share-core/filters/catalog";
+import { validateSelectQuery, validatePlaceholderPositions } from "./sql-query.js";
 import { detectEventPlatform, filterSupportsPlatform, normalizeFilterPlatforms } from "@isaiandco/ape-share-core/filters/platform";
 import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate } from "@isaiandco/ape-share-core/filters/templates";
 (function initUsefulFilters(global) {
@@ -73,6 +75,8 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "event-outcome", name: "Тот же результат события", description: "Ищет EventOutcome для того же типа события.", template: "DeviceEventClassID = '${DeviceEventClassID}' AND EventOutcome = '${EventOutcome}'", timeRange: "24h", enabled: true },
     { id: "severity", name: "События той же критичности", description: "Ищет события с текущим Severity.", template: "Severity = '${Severity}'", timeRange: "24h", enabled: true },
     { id: "external-id", name: "События с тем же внешним ID", description: "Ищет DeviceExternalID.", template: "DeviceExternalID = '${DeviceExternalID}'", timeRange: "24h", enabled: true },
+    { id: "source-destinations-summary", mode: "sql", name: "Куда обращался исходный IP", description: "Направления соединений, число событий и уникальных исходных портов.", template: "SELECT DestinationAddress AS dest_ip, DestinationNtDomain AS dest_domain, DestinationPort AS dest_port, TransportProtocol AS protocol, count(ID) AS attempts, uniq(SourcePort) AS source_ports_used FROM `events` WHERE SourceAddress = '${SourceAddress}' GROUP BY DestinationAddress, DestinationNtDomain, DestinationPort, TransportProtocol ORDER BY attempts DESC LIMIT 250", timeRange: "24h", enabled: true },
+    { id: "ssh-successful-logins", mode: "sql", platforms: ["unix"], name: "Успешные SSH-входы", description: "Входы audit/USER_ACCT с вычисляемыми колонками результата и описания.", template: "SELECT Timestamp, DeviceHostName AS SSH_Server, DestinationUserName AS Username, SourceAddress AS Client_IP, CASE WHEN EventOutcome = 'success' THEN 'Successful login' WHEN EventOutcome = 'failed' THEN 'Failed login attempt' ELSE EventOutcome END AS Result, concat('User ', DestinationUserName, ' logged in via SSH to ', DeviceHostName, ' from IP ', SourceAddress) AS Description FROM `events` WHERE DeviceProduct = 'audit' AND DeviceEventClassID = 'USER_ACCT' AND DestinationProcessName LIKE '%sshd%' AND EventOutcome = 'success' ORDER BY Timestamp DESC LIMIT 500", timeRange: "24h", enabled: true },
   ].map(Object.freeze));
 
   const PLATFORM_EVENT_IDS = Object.freeze({
@@ -109,11 +113,14 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
 
   function normalizeFilterTemplate(filter, index = 0) {
     if (!filter || typeof filter !== "object" || Array.isArray(filter)) throw new TypeError(`Фильтр ${index + 1}: ожидается объект`);
-    const template = String(filter.template ?? "").trim();
-    if (!template || template.length > 4000 || /[;\0]/.test(template)) throw new TypeError(`Фильтр ${index + 1}: недопустимый SQL-шаблон`);
+    const mode = filter.mode ?? "where";
+    if (!["where", "sql"].includes(mode)) throw new TypeError(`Фильтр ${index + 1}: mode должен быть where или sql`);
+    const template = mode === "sql" ? validateSelectQuery(filter.template) : String(filter.template ?? "").trim();
+    if (!template || template.length > (mode === "sql" ? 64000 : 4000) || (mode === "where" && /[;\0]/.test(template))) throw new TypeError(`Фильтр ${index + 1}: недопустимый SQL-шаблон`);
     const requiredFields = requiredTemplateFields(template);
     const placeholderCount = [...template.matchAll(PLACEHOLDER)].length;
-    if (!requiredFields.length || template.includes("${") && placeholderCount !== (template.match(/\$\{/g) || []).length) {
+    validatePlaceholderPositions(template);
+    if (template.includes("${") && placeholderCount !== (template.match(/\$\{/g) || []).length) {
       throw new TypeError(`Фильтр ${index + 1}: используйте подстановки вида \${ИмяПоля}`);
     }
     requiredFields.forEach((field) => {
@@ -127,7 +134,7 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     const name = String(filter.name || filter.title || `Фильтр ${index + 1}`).trim().slice(0, 120);
     if (!name) throw new TypeError(`Фильтр ${index + 1}: укажите название`);
     const timeRange = Object.hasOwn(TIME_RANGES, filter.timeRange) ? filter.timeRange : "15m";
-    return { id, name, platforms: normalizeFilterPlatforms(filter.platforms ?? BUILTIN_FILTERS.find(item => item.id === id && item.template === template)?.platforms), description: String(filter.description || "Пользовательский SQL-фильтр KUMA.").trim().slice(0, 300), template, timeRange, enabled: filter.enabled !== false };
+    return { id, name, mode, platforms: normalizeFilterPlatforms(filter.platforms ?? BUILTIN_FILTERS.find(item => item.id === id && item.template === template)?.platforms), description: String(filter.description || "Пользовательский SQL-фильтр KUMA.").trim().slice(0, 300), template, timeRange, enabled: filter.enabled !== false };
   }
 
   function normalizeFilterTemplates(filters = BUILTIN_FILTERS) {
@@ -183,7 +190,12 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
       source: api.valuesForAliases(event, ["DeviceProduct", "DeviceEventCategory"]),
       paths: api.valuesForAliases(event, ["FilePath", "DeviceProcessName", "SourceProcessName", "DestinationProcessName"]),
     });
-    const filters = normalizeFilterTemplates(filterTemplates).filter((filter) => filter.enabled && filterSupportsPlatform(filter, platform)).map((filter) => {
+    const catalog = Array.isArray(filterTemplates) ? normalizeFilterTemplates(filterTemplates).map(item => ({ ...item, source: "builtin" }))
+      : composeFilterCatalog(normalizeFilterTemplates(BUILTIN_FILTERS), (filterTemplates.userFilters || []).map(storedFilter), filterTemplates.disabledBuiltinFilterIds || []);
+    const filters = catalog.filter((filter) => filter.enabled !== false && filterSupportsPlatform(filter, platform)).map((filter) => {
+      const unavailable = error => ({ id: filter.id, source: filter.source, title: filter.name || filter.id, description: filter.description, type: "query", applicable: false, missing: [], reason: error.message });
+      if (filter.validationError) return unavailable(new Error(filter.validationError));
+      try {
       const eventIds = PLATFORM_EVENT_IDS[filter.id]?.[platform];
       const builtin = BUILTIN_FILTERS.find(item => item.id === filter.id);
       const template = eventIds && filter.template === builtin?.template
@@ -191,12 +203,13 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
         : filter.template;
       const rendered = renderFilterTemplate(template, event, profiles);
       return {
-        id: filter.id, title: filter.name, description: filter.description, type: "query", timeRange: filter.timeRange,
+        id: filter.id, source: filter.source, mode: filter.mode, title: filter.name, description: filter.description, type: "query", timeRange: filter.timeRange,
         rangeSeconds: TIME_RANGES[filter.timeRange], applicable: rendered.ok, missing: rendered.missing,
-        ...(rendered.ok ? { where: rendered.where } : { reason: `Нет полей: ${rendered.missing.join(", ")}` }),
+        ...(rendered.ok ? (filter.mode === "sql" ? { sql: validateSelectQuery(rendered.where) } : { where: rendered.where }) : { reason: `Нет полей: ${rendered.missing.join(", ")}` }),
       };
+      } catch (error) { return unavailable(error); }
     });
-    filters.push(processGraphFilter(event, processMappings));
+    filters.push({ ...processGraphFilter(event, processMappings), source: "builtin" });
     return filters;
   }
 
@@ -204,6 +217,18 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     return buildUsefulFilters(event, profiles, processMappings, filterTemplates).find((filter) => filter.id === id && filter.applicable) || null;
   }
 
-  global.KumApeFilters = Object.freeze({ BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
+  function storedFilter(filter, index) {
+    try { return normalizeFilterTemplate(filter, index); }
+    catch (error) { return { ...filter, validationError: error.message }; }
+  }
+
+  function migrateFilterCatalog(legacy) {
+    const migrated = splitLegacyFilters(migrateBuiltinFilters(legacy || []).map(storedFilter), normalizeFilterTemplates(BUILTIN_FILTERS));
+    // Preserve incompatible older templates for correction in the editor, without executing them.
+    migrated.userFilters = migrated.userFilters.map(({ validationError, ...filter }) => filter);
+    return migrated;
+  }
+
+  global.KumApeFilters = Object.freeze({ normalizeFilterTemplate, migrateFilterCatalog, BUILTIN_FILTERS, TIME_RANGES, buildUsefulFilters, findUsefulFilter, migrateBuiltinFilters, normalizeFilterTemplates, renderFilterTemplate, requiredTemplateFields });
 })(globalThis);
 

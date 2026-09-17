@@ -145,8 +145,8 @@ test("custom useful filters are rebuilt from stored templates", async () => {
   const app = background({ uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", clusterId: "c", usefulFilters });
   const event = { SourceAddress: "10.0.0.1" };
   const listed = await app.message({ type: "filters:list", event });
-  assert.equal(listed.filters.find((filter) => filter.id === "custom-ip").rangeSeconds, 604800);
-  const query = await app.message({ type: "filters:query", filterId: "custom-ip", event });
+  assert.equal(listed.filters.find((filter) => filter.id === "user:custom-ip").rangeSeconds, 604800);
+  const query = await app.message({ type: "filters:query", filterId: "user:custom-ip", event });
   assert.match(query.query, /SourceAddress = '10\.0\.0\.1'/);
 });
 
@@ -468,4 +468,30 @@ test("migrated audit profile loads who with its parent and sibling instead of th
   assert.match(queries[0], /DestinationProcessID = 333153/);
   assert.match(queries[0], /SourceProcessID = 339824/);
   assert.ok(queries.every(query => !/ProcessID = 1713/.test(query)));
+});
+
+test("full SQL reaches copy, API and native tab unchanged, with matching event period", async () => {
+  const sql = "SELECT DestinationAddress AS dest_ip, count(ID) AS attempts FROM `events` WHERE SourceAddress = '${SourceAddress}' GROUP BY DestinationAddress ORDER BY attempts DESC LIMIT 500";
+  const userFilters = [{ id: "summary", mode: "sql", template: sql, timeRange: "1h" }];
+  let sent;
+  const local = { uiOrigin: "https://kuma.test", apiOrigin: "https://kuma.test:7223", apiToken: "synthetic", clusterId: "c", userFilters };
+  const app = background(local, {}, async (url, options) => { sent = JSON.parse(options.body); return Response.json({ events: [{ dest_ip: "192.0.2.1", attempts: 7 }] }); });
+  const message = { filterId: "user:summary", event: { SourceAddress: "192.0.2.2", Timestamp: "2026-09-07T00:00:00Z" }, limit: 1, sql: "SELECT 'untrusted'" };
+  const copied = await app.message({ ...message, type: "filters:query" });
+  assert.equal(copied.ok, true);
+  assert.equal(copied.query, sql.replace("${SourceAddress}", "192.0.2.2"));
+  const result = await app.message({ ...message, type: "filters:search" });
+  assert.equal(result.ok, true);
+  assert.equal(result.result.tabular, true);
+  assert.equal(sent.sql, copied.query);
+  assert.equal(result.result.events[0].attempts, 7);
+  const opened = await app.message({ ...message, type: "filters:open-tab" });
+  assert.equal(opened.ok, true);
+  const url = new URL(app.createdTabs[0].url);
+  const payload = JSON.parse(decodeURIComponent(new URLSearchParams(url.hash.split("?")[1]).get("search")));
+  assert.equal(payload.sql, sent.sql);
+  assert.equal(payload.period.from, Date.parse(sent.period.from));
+  assert.equal(payload.period.to, Date.parse(sent.period.to));
+  await background(local).message({ type: "config:get" });
+  assert.deepEqual(local.userFilters, userFilters);
 });

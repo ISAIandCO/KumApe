@@ -79,3 +79,40 @@ test("mixed built-in templates use the detected OS while custom queries remain i
   const custom = [{ id: "process-on-host", template: "DeviceHostName = '${DeviceHostName}' AND DeviceEventClassID = 'CUSTOM'" }];
   assert.match(filters.buildUsefulFilters(event, undefined, undefined, custom)[0].where, /CUSTOM/);
 });
+
+test("SQL mode supports static and parameterized queries without WHERE wrapping", () => {
+  const filters = api();
+  const userFilters = [{ id: "agg", mode: "sql", template: "SELECT DestinationAddress, count(ID) AS attempts FROM `events` WHERE SourceAddress = '${SourceAddress}' GROUP BY DestinationAddress HAVING attempts > 1 ORDER BY attempts DESC LIMIT 500", timeRange: "24h" }];
+  const catalog = { userFilters, disabledBuiltinFilterIds: ["host-events"] };
+  const results = filters.buildUsefulFilters({ SourceAddress: "x' OR 1=1 --", DeviceHostName: "host" }, undefined, undefined, catalog);
+  assert.equal(results.some(item => item.id === "host-events"), false);
+  const query = results.find(item => item.id === "user:agg");
+  assert.equal(query.where, undefined);
+  assert.match(query.sql, /GROUP BY DestinationAddress HAVING attempts > 1 ORDER BY attempts DESC LIMIT 500$/);
+  assert.match(query.sql, /x\\' OR 1=1 --/);
+  const staticFilters = filters.buildUsefulFilters({}, undefined, undefined, { userFilters: [{ id: "static", mode: "sql", template: "SELECT count(ID) AS attempts FROM `events`" }] });
+  assert.equal(staticFilters.find(item => item.id === "user:static").applicable, true);
+  assert.throws(() => filters.normalizeFilterTemplates([{ id: "bad", mode: "sql", template: "SELECT * FROM `events` WHERE Message LIKE '%${Message}%'" }]), /Подстановка/);
+});
+
+test("legacy edits migrate once and survive newer built-ins", () => {
+  const filters = api();
+  const saved = JSON.parse(JSON.stringify(filters.BUILTIN_FILTERS));
+  saved[0].name = "Мой узел";
+  saved[1].enabled = false;
+  const migrated = filters.migrateFilterCatalog(saved);
+  assert.equal(migrated.userFilters.length, 1);
+  assert.equal(migrated.userFilters[0].name, "Мой узел");
+  assert.ok(migrated.disabledBuiltinFilterIds.includes("host-events"));
+  assert.ok(migrated.disabledBuiltinFilterIds.includes("event-id"));
+});
+
+test("an incompatible legacy template is preserved without disabling other filters", () => {
+  const filters = api();
+  const legacy = [{ id: "partial", template: "Message LIKE '%${Message}%'" }];
+  const migrated = filters.migrateFilterCatalog(legacy);
+  assert.equal(migrated.userFilters[0].template, legacy[0].template);
+  const result = filters.buildUsefulFilters({ Message: "hello", DeviceHostName: "h" }, undefined, undefined, migrated);
+  assert.equal(result.find(item => item.id === "host-events").applicable, true);
+  assert.equal(result.find(item => item.id === "user:partial").applicable, false);
+});
