@@ -44,3 +44,7 @@ footer { padding: 9px 14px 11px; border-top: 1px solid color-mix(in srgb, Canvas
 [hidden] { display: none !important; }
 
 .ai-chat {margin-top:12px;} .chat-messages {max-height:300px;overflow:auto;} .chat-messages article {padding:10px;margin:8px 0;border:1px solid #dedbe8;border-radius:9px;} .ai-chat textarea {width:100%;min-height:80px;} .ai-chat .toolbar {display:flex;gap:6px;flex-wrap:wrap;} .ai-chat pre {max-height:250px;overflow:auto;white-space:pre-wrap;}
+
+#related-result { overflow-x: auto; }
+#related-result table { border-collapse: collapse; font-size: 12px; }
+#related-result td, #related-result th { padding: 6px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); text-align: left; }

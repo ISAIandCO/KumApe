@@ -143,8 +143,9 @@ async function renderFilters() {
   }
   const response = await send({ type: "filters:list", event: state.context.event });
   state.filters = response.filters.sort((a, b) => Number(b.applicable) - Number(a.applicable) || a.title.localeCompare(b.title, "ru"));
+  const groups = new Map([ ["builtin", "Встроенные"], ["user", "Пользовательские"] ].map(([key, label]) => { const group = document.createElement("optgroup"); group.label = label; select.append(group); return [key, group]; }));
   for (const filter of state.filters) {
-    const missing = filter.missing?.length ? ` — нет полей: ${filter.missing.join(", ")}` : "";
+    const missing = filter.missing?.length ? ` — нет полей: ${filter.missing.join(", ")}` : !filter.applicable && filter.reason ? ` — ${filter.reason}` : "";
     const option = new Option(`${filter.title}${missing}`, filter.id);
     option.disabled = !filter.applicable;
     select.add(option);
@@ -310,7 +311,7 @@ $("#useful-filter").addEventListener("change", previewFilter);
 $("#run-filter").addEventListener("click", () => withSelectedFilter(async (filter) => {
   setStatus(`Применяю фильтр «${filter.title}»…`);
   const response = await send({ type: "filters:search", filterId: filter.id, event: state.context.event, limit: 250 });
-  activatePanel("related"); renderResults(response.result); setStatus(`Найдено событий: ${response.result.events.length}`);
+  activatePanel("related"); renderResults(response.result); setStatus(`Найдено строк: ${response.result.events.length}`);
 }).catch((error) => setStatus(error.message, true)));
 $("#open-filter-graph").addEventListener("click", () => withSelectedFilter(async (filter) => {
   await send({ type: "process:open-graph", event: state.context.event, rangeSeconds: filter.rangeSeconds, limit: 1000 });
@@ -339,6 +340,21 @@ $("#download-json").addEventListener("click", () => {
 
 function renderResults(result) {
   const root=$("#related-result"); root.hidden=false; root.replaceChildren();
+  if (result.tabular) {
+    const table = document.createElement("table"), head = document.createElement("thead"), body = document.createElement("tbody");
+    const columns = [...new Set(result.events.flatMap(row => Object.keys(row)))];
+    const titles = document.createElement("tr");
+    for (const column of columns) { const cell = document.createElement("th"); cell.textContent = column; titles.append(cell); }
+    head.append(titles);
+    for (const row of result.events) {
+      const tr = document.createElement("tr");
+      for (const column of columns) { const cell = document.createElement("td"); const value = row[column]; cell.textContent = typeof value === "object" ? JSON.stringify(value) : String(value ?? ""); tr.append(cell); }
+      body.append(tr);
+    }
+    table.append(head, body); root.append(table, button("Копировать результаты JSON", () => navigator.clipboard.writeText(JSON.stringify(result.events, null, 2))));
+    if (!result.events.length) root.append(document.createTextNode("Строки не найдены"));
+    return;
+  }
   for(const event of [...result.events].sort((a,b)=>globalThis.KumApeAdapter.eventTimestamp(a)-globalThis.KumApeAdapter.eventTimestamp(b))) {
     const actions=addCard(root,globalThis.KumApeInvestigations.describeEvent(event),new Date(globalThis.KumApeAdapter.eventTimestamp(event)).toLocaleString("ru-RU"));
     actions.append(button("JSON",()=>navigator.clipboard.writeText(JSON.stringify(event,null,2))),button("В расследование",async()=>{

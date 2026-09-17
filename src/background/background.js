@@ -12,7 +12,8 @@ const DEFAULT_CONFIG = Object.freeze({
   clusterId: "",
   fieldProfiles: adapterApi.BUILTIN_FIELD_PROFILES,
   processMappings: processApi.BUILTIN_PROCESS_MAPPINGS,
-  usefulFilters: globalThis.KumApeFilters.BUILTIN_FILTERS,
+  userFilters: [],
+  disabledBuiltinFilterIds: [],
   ai: { enabled: false, endpoint: "http://127.0.0.1:8080/v1", model: "local-model", privacyMode: "strict" },
 });
 const processGraphs = new Map();
@@ -31,7 +32,7 @@ const ALLOWED_REQUESTS = Object.freeze([
 // One-time migration keeps keys entered before the persistent-storage update.
 const keyMigration = (async () => {
   const [local, session] = await Promise.all([
-    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings", "usefulFilters", "graphMappingsRevision"]),
+    browser.storage.local.get(["apiToken", "iocApiKeys", "fieldProfiles", "processMappings", "usefulFilters", "userFilters", "graphMappingsRevision"]),
     browser.storage.session.get(["apiToken", "iocApiKeys"]),
   ]);
   const moved = {};
@@ -58,7 +59,7 @@ const keyMigration = (async () => {
     moved.processMappings = processApi.consolidateProcessMappings(moved.processMappings || local.processMappings || processApi.BUILTIN_PROCESS_MAPPINGS);
     moved.graphMappingsRevision = 1;
   }
-  if (local.usefulFilters) moved.usefulFilters = globalThis.KumApeFilters.migrateBuiltinFilters(local.usefulFilters);
+  if (local.userFilters === undefined) Object.assign(moved, globalThis.KumApeFilters.migrateFilterCatalog(local.usefulFilters));
   if (Object.keys(moved).length) await browser.storage.local.set(moved);
   await browser.storage.session.remove(["apiToken", "iocApiKeys"]);
 })();
@@ -169,7 +170,7 @@ async function safeRelatedAction(message) {
 
 async function safeFilter(message) {
   const config = await loadConfig();
-  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles, config.processMappings, config.usefulFilters);
+  const filter = globalThis.KumApeFilters.findUsefulFilter(message.filterId, message.event, config.fieldProfiles, config.processMappings, config);
   if (!filter) throw new Error("Фильтр неприменим к текущему событию");
   return filter;
 }
@@ -177,7 +178,7 @@ async function safeFilter(message) {
 async function openKumaSearchTab(message, action) {
   const config = await loadConfig();
   if (!config.uiOrigin) throw new Error("Сначала укажите адрес KUMA в настройках");
-  const query = adapterApi.buildEventsQuery(action.where, message.limit);
+  const query = adapterApi.buildActionQuery(action, message.limit);
   const tab = await browser.tabs.create({ url: adapterApi.threatHuntingUrl(config.uiOrigin, query, action.period || message.rangeSeconds) });
   if (!Number.isInteger(tab?.id)) throw new Error("Firefox не вернул идентификатор вкладки KUMA");
   return { tabId: tab.id };
@@ -390,18 +391,18 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         }
       case "related:query": {
         const action = await safeRelatedAction(message);
-        return { ok: true, query: adapterApi.buildEventsQuery(action.where, message.limit) };
+        return { ok: true, query: adapterApi.buildActionQuery(action, message.limit) };
       }
       case "related:open-tab":
         return { ok: true, result: await openKumaSearchTab(message, await safeRelatedAction(message)) };
       case "filters:list": {
         const config = await loadConfig();
-        const filters = globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles, config.processMappings, config.usefulFilters);
-        return { ok: true, filters: filters.map(({ where, ...filter }) => ({ ...filter, ...(where ? { preview: where } : {}) })) };
+        const filters = globalThis.KumApeFilters.buildUsefulFilters(message.event, config.fieldProfiles, config.processMappings, config);
+        return { ok: true, filters: filters.map(({ where, sql, ...filter }) => ({ ...filter, ...((sql || where) ? { preview: sql || where } : {}) })) };
       }
       case "filters:query": {
         const filter = await safeFilter(message);
-        return { ok: true, query: adapterApi.buildEventsQuery(filter.where, message.limit) };
+        return { ok: true, query: adapterApi.buildActionQuery(filter, message.limit) };
       }
       case "filters:search": {
         const filter = await safeFilter(message);
@@ -409,7 +410,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       }
       case "filters:open-tab": {
         const filter = await safeFilter(message);
-        return { ok: true, result: await openKumaSearchTab({ ...message, rangeSeconds: filter.rangeSeconds }, filter) };
+        return { ok: true, result: await openKumaSearchTab(message, { ...filter, period: Object.fromEntries(Object.entries(adapterApi.eventPeriod(message.event, filter.rangeSeconds)).map(([key, value]) => [key, Date.parse(value)])) }) };
       }
       case "process:open-graph":
         return { ok: true, result: await openProcessGraph(message) };

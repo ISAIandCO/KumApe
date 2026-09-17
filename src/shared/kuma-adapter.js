@@ -1,3 +1,4 @@
+import { validateSelectQuery } from "./sql-query.js";
 import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
 (function initKumaAdapter(global) {
   "use strict";
@@ -418,6 +419,10 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
     return `SELECT * FROM \`events\` WHERE ${predicate} ORDER BY Timestamp DESC LIMIT ${safeLimit}`;
   }
 
+  function buildActionQuery(action, limit, maxLimit) {
+    return action.sql !== undefined ? validateSelectQuery(action.sql) : buildEventsQuery(action.where, limit, maxLimit);
+  }
+
   function threatHuntingUrl(origin, sql, rangeOrPeriod = DEFAULT_RANGE_SECONDS) {
     let period;
     if (rangeOrPeriod && typeof rangeOrPeriod === "object") {
@@ -606,7 +611,7 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
         period: action.period ?? eventPeriod(event, rangeSeconds),
         emptyFields: true,
         rawTimestamps: true,
-        sql: buildEventsQuery(action.where, limit, maxLimit),
+        sql: buildActionQuery(action, limit, maxLimit),
       };
       const response = await this.request({
         origin: this.apiOrigin,
@@ -616,7 +621,7 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
         signal: action.signal,
         body,
       });
-      return { clusterId, query: body.sql, period: body.period, events: eventsFromResponse(response), raw: response };
+      return { clusterId, tabular: action.sql !== undefined, query: body.sql, period: body.period, events: eventsFromResponse(response), raw: response };
     }
 
     getCorrelationRule(id) {
@@ -634,6 +639,7 @@ import { reportLinks } from "@isaiandco/ape-share-core/ioc/report-links";
     DEFAULT_RANGE_SECONDS,
     KumaAdapter,
     buildEventsQuery,
+    buildActionQuery,
     batchSearchConditions,
     permissionPattern,
     buildRelatedActions,

@@ -31,8 +31,9 @@
       <fieldset>
         <legend>Полезные фильтры</legend>
         <p class="hint">Редактируемый JSON-массив SQL-шаблонов. Значения события подставляются через <code>${ИмяПоля}</code> с экранированием. Логические группы <code>${@host}</code>, <code>${@account}</code>, <code>${@process}</code>, <code>${@ip}</code>, <code>${@file}</code> и другие используют активный профиль полей. <code>timeRange</code>: <code>5m</code>, <code>15m</code>, <code>1h</code>, <code>24h</code>, <code>7d</code> или <code>30d</code>; <code>enabled: false</code> скрывает фильтр.</p>
-        <textarea id="useful-filters" rows="24" spellcheck="false" required></textarea>
-        <div class="actions"><button id="restore-useful-filters" type="button">Вернуть рекомендуемые фильтры</button></div>
+        <p class="hint"><code>mode: "where"</code> — условие поиска (по умолчанию); <code>mode: "sql"</code> — полный SELECT или WITH … SELECT: колонки, CASE, функции, GROUP BY, HAVING, ORDER BY, LIMIT. Полный запрос передаётся без изменения сортировки и лимита. Подстановки необязательны, должны занимать целое значение; для LIKE используйте <code>concat('%', ${ИмяПоля}, '%')</code>. Период — ±timeRange вокруг события; без времени события — вокруг текущего времени. Проверку функций выполняет KUMA.</p>
+        <div id="filter-editor"></div>
+        <button id="save-filters" type="button">Сохранить фильтры</button>
       </fieldset>
       <div class="actions"><button type="submit">Сохранить и выдать доступ</button><button id="clear-token" type="button">Забыть токен</button></div>
     </form>
@@ -64,6 +65,6 @@
   <script src="../shared/process-model.js"></script>
   <script src="../shared/useful-filters.js"></script>
   <script src="../shared/ioc-providers.js"></script>
-  <script src="options.js"></script>
+  <script type="module" src="options.js"></script>
 </body>
 </html>
