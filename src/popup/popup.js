@@ -148,8 +148,9 @@ async function renderFilters() {
     const missing = filter.missing?.length ? ` — нет полей: ${filter.missing.join(", ")}` : !filter.applicable && filter.reason ? ` — ${filter.reason}` : "";
     const option = new Option(`${filter.title}${missing}`, filter.id);
     option.disabled = !filter.applicable;
-    select.add(option);
+    groups.get(filter.source || "builtin").append(option);
   }
+  for (const group of groups.values()) if (!group.children.length) group.remove();
   select.disabled = !state.filters.length;
   previewFilter();
 }

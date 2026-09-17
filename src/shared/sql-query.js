@@ -1,15 +1,30 @@
 // Lexical checks only. KUMA remains the authority for SQL syntax and supported functions.
-function sqlTokens(sql) {
+function lexSql(sql) {
   const tokens = [];
-  const pattern = /\s+|--[^\r\n]*|\/\*[\s\S]*?\*\/|'(?:\\[\s\S]|''|[^'\\])*'|"(?:\\[\s\S]|""|[^"\\])*"|`(?:\\[\s\S]|``|[^`\\])*`|[A-Za-z_][A-Za-z0-9_]*|[\s\S]/g;
+  const pattern = /\s+|--[^\r\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\[\s\S]|''|[^'\\])*'|"(?:\\[\s\S]|""|[^"\\])*"|`(?:\\[\s\S]|``|[^`\\])*`|[A-Za-z_][A-Za-z0-9_]*|[\s\S]/g;
   for (const match of sql.matchAll(pattern)) {
     const value = match[0];
-    if (/^\s|^--|^\/\*/.test(value)) continue;
+    if (value.startsWith("/*") && !value.endsWith("*/")) throw new TypeError("Незакрытый комментарий в SQL");
     if (["'", '"', "`"].includes(value)) throw new TypeError("Незакрытая кавычка в SQL");
-    tokens.push({ value, start: match.index, end: match.index + value.length });
+    tokens.push({ value, start: match.index, end: match.index + value.length, spacing: /^\s|^--|^\/\*/.test(value) });
   }
   return tokens;
 }
+
+function sqlTokens(sql) { return lexSql(sql).filter(token => !token.spacing); }
+
+// Whitespace and comments are changed only outside quoted strings/identifiers.
+export function compactSql(input) {
+  let result = "", space = false;
+  for (const token of lexSql(String(input ?? ""))) {
+    if (token.spacing) { space = true; continue; }
+    if (space && result) result += " ";
+    result += token.value; space = false;
+  }
+  return result;
+}
+
+export function prepareSelectQuery(input) { return compactSql(validateSelectQuery(input)); }
 
 export function validateSelectQuery(input) {
   const sql = String(input ?? "").trim();

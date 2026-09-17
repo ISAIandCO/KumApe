@@ -116,3 +116,32 @@ test("an incompatible legacy template is preserved without disabling other filte
   assert.equal(result.find(item => item.id === "host-events").applicable, true);
   assert.equal(result.find(item => item.id === "user:partial").applicable, false);
 });
+
+test("formatted templates persist verbatim and only executable placeholders are required", () => {
+  const filters = api();
+  const template = "  -- пояснение ${Absent} и даже ${незакончено\nSELECT\n    Timestamp,\n    CASE\n      -- Проверяем Sub status\n      WHEN DeviceCustomString1 = '0xc000006a' THEN 'Неверный пароль'\n      ELSE concat('Sub: ', DeviceCustomString1, ' / Status: ', DeviceCustomString6)\n    END AS Failure_Reason\nFROM `events`\nWHERE DestinationUserName = '${DestinationUserName}'\nORDER BY Timestamp DESC;\n";
+  const stored = filters.normalizeFilterTemplate({ id: "failed-logons", name: "Входы", mode: "sql", template });
+  assert.equal(stored.template, template);
+  assert.deepEqual([...filters.requiredTemplateFields(template)], ["DestinationUserName"]);
+  const compiled = filters.buildUsefulFilters({ DestinationUserName: "a'--b" }, undefined, undefined, { userFilters: [stored] }).find(item => item.id === "user:failed-logons");
+  assert.equal(compiled.applicable, true);
+  assert.match(compiled.sql, /CASE WHEN DeviceCustomString1/);
+  assert.doesNotMatch(compiled.sql, /пояснение|Проверяем|Absent/);
+  assert.match(compiled.sql, /a\\'--b/);
+  assert.match(compiled.sql, /ORDER BY Timestamp DESC$/);
+  assert.equal(stored.template, template);
+});
+
+test("the complete 4625 CASE example survives storage and compiles without its comments", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const template = await readFile(new URL("./fixtures/sql/windows-logon-failures.sql", import.meta.url), "utf8");
+  const filters = api();
+  const stored = filters.normalizeFilterTemplate({ id: "4625", mode: "sql", template });
+  assert.equal(stored.template, template);
+  const result = filters.buildUsefulFilters({ DestinationUserName: "test-user" }, undefined, undefined, { userFilters: [stored] }).find(item => item.id === "user:4625");
+  assert.equal(result.applicable, true);
+  assert.doesNotMatch(result.sql, /--|\n/);
+  assert.match(result.sql, /THEN 'Неверный пароль'/);
+  assert.match(result.sql, /DestinationUserName = 'test-user'/);
+  assert.equal((result.sql.match(/WHEN /g) || []).length, (template.match(/WHEN /g) || []).length);
+});
