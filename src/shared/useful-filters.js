@@ -20,29 +20,29 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "host-events", name: "Все события узла", description: "Показывает активность текущего узла.", template: "DeviceHostName = '${DeviceHostName}'", timeRange: "1h", enabled: true },
     { id: "event-id", name: "Текущее событие по ID", description: "Находит конкретное событие KUMA по его идентификатору.", template: "ID = '${ID}'", timeRange: "5m", enabled: true },
     { id: "event-class-host", name: "Такой же тип события на узле", description: "Ищет тот же Event ID на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND DeviceEventClassID = '${DeviceEventClassID}'", timeRange: "24h", enabled: true },
-    { id: "event-class-global", name: "Такой же тип события", description: "Ищет текущий Event ID во всей доступной области.", template: "DeviceEventClassID = '${DeviceEventClassID}'", timeRange: "1h", enabled: true },
-    { id: "source-account", name: "Активность исходной учётной записи", description: "Ищет учётную запись источника в обеих ролях.", template: "SourceUserName = '${SourceUserName}' OR DestinationUserName = '${SourceUserName}'", timeRange: "24h", enabled: true },
-    { id: "destination-account", name: "Активность целевой учётной записи", description: "Ищет целевую учётную запись в обеих ролях.", template: "SourceUserName = '${DestinationUserName}' OR DestinationUserName = '${DestinationUserName}'", timeRange: "24h", enabled: true },
-    { id: "source-account-host", name: "Исходная учётная запись на узле", description: "Ограничивает активность учётной записи текущим узлом.", template: "DeviceHostName = '${DeviceHostName}' AND (SourceUserName = '${SourceUserName}' OR DestinationUserName = '${SourceUserName}')", timeRange: "24h", enabled: true },
-    { id: "destination-account-host", name: "Целевая учётная запись на узле", description: "Ограничивает активность целевой учётной записи текущим узлом.", template: "DeviceHostName = '${DeviceHostName}' AND (SourceUserName = '${DestinationUserName}' OR DestinationUserName = '${DestinationUserName}')", timeRange: "24h", enabled: true },
-    { id: "source-user-id", name: "Активность исходного User ID", description: "Ищет идентификатор пользователя источника в обеих ролях.", template: "SourceUserID = '${SourceUserID}' OR DestinationUserID = '${SourceUserID}'", timeRange: "24h", enabled: true },
-    { id: "destination-user-id", name: "Активность целевого User ID", description: "Ищет идентификатор целевого пользователя в обеих ролях.", template: "SourceUserID = '${DestinationUserID}' OR DestinationUserID = '${DestinationUserID}'", timeRange: "24h", enabled: true },
+    { id: "event-class-global", name: "Такой же тип события (глобально)", description: "Ищет текущий Event ID во всей доступной области.", template: "DeviceEventClassID = '${DeviceEventClassID}'", timeRange: "1h", enabled: true },
+    { id: "source-account", name: "Активность исходной учётной записи (глобально)", description: "Ищет учётную запись источника в обеих ролях.", template: "SourceUserName = '${SourceUserName}' OR DestinationUserName = '${SourceUserName}'", timeRange: "24h", enabled: true },
+    { id: "destination-account", name: "Активность целевой учётной записи (глобально)", description: "Ищет целевую учётную запись в обеих ролях.", template: "SourceUserName = '${DestinationUserName}' OR DestinationUserName = '${DestinationUserName}'", timeRange: "24h", enabled: true },
+    { id: "source-account-host", name: "Активность исходной учётной записи (локально)", description: "Ограничивает активность учётной записи текущим узлом.", template: "DeviceHostName = '${DeviceHostName}' AND (SourceUserName = '${SourceUserName}' OR DestinationUserName = '${SourceUserName}')", timeRange: "24h", enabled: true },
+    { id: "destination-account-host", name: "Активность целевой учётной записи (локально)", description: "Ограничивает активность целевой учётной записи текущим узлом.", template: "DeviceHostName = '${DeviceHostName}' AND (SourceUserName = '${DestinationUserName}' OR DestinationUserName = '${DestinationUserName}')", timeRange: "24h", enabled: true },
+    { id: "source-user-id", name: "Активность исходного User ID (глобально)", description: "Ищет идентификатор пользователя источника в обеих ролях.", template: "SourceUserID = '${SourceUserID}' OR DestinationUserID = '${SourceUserID}'", timeRange: "24h", enabled: true },
+    { id: "destination-user-id", name: "Активность целевого User ID (глобально)", description: "Ищет идентификатор целевого пользователя в обеих ролях.", template: "SourceUserID = '${DestinationUserID}' OR DestinationUserID = '${DestinationUserID}'", timeRange: "24h", enabled: true },
     { id: "source-ip", name: "Активность исходного IP", description: "Ищет исходный IP с обеих сторон соединения.", template: "SourceAddress = '${SourceAddress}' OR DestinationAddress = '${SourceAddress}'", timeRange: "24h", enabled: true },
     { id: "destination-ip", name: "Активность целевого IP", description: "Ищет IP назначения с обеих сторон соединения.", template: "SourceAddress = '${DestinationAddress}' OR DestinationAddress = '${DestinationAddress}'", timeRange: "24h", enabled: true },
     { id: "device-ip", name: "Активность IP устройства", description: "Ищет адрес устройства в основных IP-полях.", template: "DeviceAddress = '${DeviceAddress}' OR SourceAddress = '${DeviceAddress}' OR DestinationAddress = '${DeviceAddress}'", timeRange: "24h", enabled: true },
     { id: "ip-pair", name: "Связь между двумя IP", description: "Ищет обмен между src и dst в обоих направлениях.", template: "(SourceAddress = '${SourceAddress}' AND DestinationAddress = '${DestinationAddress}') OR (SourceAddress = '${DestinationAddress}' AND DestinationAddress = '${SourceAddress}')", timeRange: "24h", enabled: true },
-    { id: "source-ip-destination-port", name: "Исходный IP и порт назначения", description: "Сужает поиск до текущего источника и целевого порта.", template: "SourceAddress = '${SourceAddress}' AND DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: true },
-    { id: "source-port", name: "Исходный порт", description: "Ищет события с тем же исходным портом.", template: "SourcePort = ${SourcePort}", timeRange: "24h", enabled: true },
-    { id: "destination-port", name: "Порт назначения", description: "Ищет события с тем же портом назначения.", template: "DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: true },
+    { id: "source-ip-destination-port", name: "Активность пары Исходный IP+порт назначения", description: "Сужает поиск до текущего источника и целевого порта.", template: "SourceAddress = '${SourceAddress}' AND DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: true },
+    { id: "source-port", name: "Исходный порт", description: "Ищет события с тем же исходным портом.", template: "SourcePort = ${SourcePort}", timeRange: "24h", enabled: false },
+    { id: "destination-port", name: "Порт назначения", description: "Ищет события с тем же портом назначения.", template: "DestinationPort = ${DestinationPort}", timeRange: "24h", enabled: false },
     { id: "network-flow", name: "Точный сетевой поток", description: "Ищет совпадение IP, портов и протокола.", template: "SourceAddress = '${SourceAddress}' AND SourcePort = ${SourcePort} AND DestinationAddress = '${DestinationAddress}' AND DestinationPort = ${DestinationPort} AND TransportProtocol = '${TransportProtocol}'", timeRange: "1h", enabled: true },
     { id: "protocol-host", name: "Тот же протокол на узле", description: "Ищет события протокола на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND TransportProtocol = '${TransportProtocol}'", timeRange: "24h", enabled: true },
     { id: "application-protocol", name: "Тот же прикладной протокол", description: "Ищет события с текущим ApplicationProtocol.", template: "ApplicationProtocol = '${ApplicationProtocol}'", timeRange: "24h", enabled: true },
-    { id: "source-hostname", name: "Активность исходного имени узла", description: "Ищет текущее SourceHostName.", template: "SourceHostName = '${SourceHostName}'", timeRange: "7d", enabled: true },
-    { id: "destination-hostname", name: "Активность имени узла назначения", description: "Ищет текущее DestinationHostName.", template: "DestinationHostName = '${DestinationHostName}'", timeRange: "7d", enabled: true },
-    { id: "source-domain", name: "Активность исходного домена", description: "Ищет SourceDnsDomain.", template: "SourceDnsDomain = '${SourceDnsDomain}'", timeRange: "7d", enabled: true },
-    { id: "destination-domain", name: "Активность домена назначения", description: "Ищет DestinationDnsDomain.", template: "DestinationDnsDomain = '${DestinationDnsDomain}'", timeRange: "7d", enabled: true },
-    { id: "source-mac", name: "Активность исходного MAC", description: "Ищет события с тем же MAC-адресом источника.", template: "SourceMacAddress = '${SourceMacAddress}'", timeRange: "7d", enabled: true },
-    { id: "destination-mac", name: "Активность MAC назначения", description: "Ищет события с тем же MAC-адресом назначения.", template: "DestinationMacAddress = '${DestinationMacAddress}'", timeRange: "7d", enabled: true },
+    { id: "source-hostname", name: "Активность исходного имени узла", description: "Ищет текущее SourceHostName.", template: "SourceHostName = '${SourceHostName}' or DestinationHostName = '${SourceHostName}'", timeRange: "7d", enabled: true },
+    { id: "destination-hostname", name: "Активность имени узла назначения", description: "Ищет текущее DestinationHostName.", template: "DestinationHostName = '${DestinationHostName}' or SourceHostName = '${DestinationHostName}'", timeRange: "7d", enabled: true },
+    { id: "source-domain", name: "Активность исходного домена", description: "Ищет SourceDnsDomain.", template: "SourceDnsDomain = '${SourceDnsDomain}'", timeRange: "7d", enabled: false },
+    { id: "destination-domain", name: "Активность домена назначения", description: "Ищет DestinationDnsDomain.", template: "DestinationDnsDomain = '${DestinationDnsDomain}'", timeRange: "7d", enabled: false },
+    { id: "source-mac", name: "Активность исходного MAC", description: "Ищет события с тем же MAC-адресом источника.", template: "SourceMacAddress = '${SourceMacAddress}' or DestinationMacAddress = '${SourceMacAddress}'", timeRange: "7d", enabled: true },
+    { id: "destination-mac", name: "Активность MAC назначения", description: "Ищет события с тем же MAC-адресом назначения.", template: "SourceMacAddress = '${DestinationMacAddress}' or DestinationMacAddress = '${DestinationMacAddress}'", timeRange: "7d", enabled: true },
     { id: "auth-failures", name: "Неуспешные входы", description: "Ищет ошибки входа для текущей учётной записи.", template: "${@account} AND DeviceEventClassID IN ('4625', '4771', '4776', 'USER_AUTH', 'USER_LOGIN')", timeRange: "24h", enabled: true },
     { id: "auth-by-ip", name: "Аутентификация с IP", description: "Ищет попытки входа с текущего адреса.", template: "${@ip} AND DeviceEventClassID IN ('4624', '4625', '4648', '4771', '4776', 'USER_AUTH', 'USER_LOGIN')", timeRange: "24h", enabled: true },
     { id: "process-on-host", name: "Запуски процессов на узле", description: "Ищет Windows 4688, Sysmon 1 и Linux EXECVE на текущем узле.", template: "${@host} AND DeviceEventClassID IN ('4688', '1', 'EXECVE')", timeRange: "1h", enabled: true },
@@ -51,8 +51,8 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "source-process-host", name: "Исходный процесс на узле", description: "Ищет SourceProcessName во всех основных процессных полях.", template: "DeviceHostName = '${DeviceHostName}' AND (DestinationProcessName = '${SourceProcessName}' OR SourceProcessName = '${SourceProcessName}' OR DeviceProcessName = '${SourceProcessName}')", timeRange: "7d", enabled: true },
     { id: "device-pid-host", name: "Device PID на узле", description: "Ищет PID процесса только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DeviceProcessID} OR DestinationProcessID = ${DeviceProcessID} OR SourceProcessID = ${DeviceProcessID})", timeRange: "1h", enabled: true },
     { id: "destination-pid-host", name: "Destination PID на узле", description: "Ищет целевой PID только на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND (DeviceProcessID = ${DestinationProcessID} OR DestinationProcessID = ${DestinationProcessID} OR SourceProcessID = ${DestinationProcessID})", timeRange: "1h", enabled: true },
-    { id: "children-by-pid", name: "Дочерние процессы по PID", description: "Ищет процессы, у которых PID текущего процесса указан как родительский.", template: "DeviceHostName = '${DeviceHostName}' AND SourceProcessID = ${DestinationProcessID}", timeRange: "1h", enabled: true },
-    { id: "command-line-4688", platforms: ["windows"], name: "Та же командная строка 4688", description: "Ищет точное совпадение DeviceCustomString4.", template: "DeviceCustomString4 = '${DeviceCustomString4}'", timeRange: "7d", enabled: true },
+    { id: "children-by-pid", name: "Дочерние процессы по PID", description: "Ищет процессы, у которых PID текущего процесса указан как родительский.", template: "DeviceHostName = '${DeviceHostName}' AND (SourceProcessID = ${DestinationProcessID} or (DeviceCustomString5 = '${DeviceCustomString3}' and DeviceCustomString5Label ilike '%process id%'))", timeRange: "1h", enabled: true },
+    { id: "command-line-4688", platforms: ["windows"], name: "Та же командная строка 4688 (Глобально)", description: "Ищет точное совпадение DeviceCustomString4.", template: "DeviceCustomString4 = '${DeviceCustomString4}'", timeRange: "7d", enabled: true },
     { id: "powershell-host", platforms: ["windows"], name: "PowerShell на узле", description: "Ищет Script Block 4104 и запуски PowerShell без учёта регистра и пути.", template: "${@host} AND (DeviceEventClassID = '4104' OR DeviceProcessName ILIKE '%powershell.exe' OR DestinationProcessName ILIKE '%powershell.exe')", timeRange: "24h", enabled: true },
     { id: "service-install-host", platforms: ["windows"], name: "Установка служб на узле", description: "Ищет Windows 4697 и 7045.", template: "${@host} AND DeviceEventClassID IN ('4697', '7045')", timeRange: "7d", enabled: true },
     { id: "network-by-process", platforms: ["windows"], name: "Сеть текущего процесса", description: "Ищет Sysmon 3 и Windows Filtering Platform 5156/5157 для текущего процесса.", template: "${@process} AND ${@host} AND DeviceEventClassID IN ('3', '5156', '5157')", timeRange: "1h", enabled: true },
@@ -64,19 +64,131 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
     { id: "events-by-hash", name: "События с тем же хешем", description: "Ищет текущий файловый хеш во всех полях профиля.", template: "${@hash}", timeRange: "30d", enabled: true },
     { id: "old-file-hash", name: "События со старым хешем", description: "Ищет OldFileHash среди текущих и прежних значений.", template: "FileHash = '${OldFileHash}' OR OldFileHash = '${OldFileHash}'", timeRange: "30d", enabled: true },
     { id: "request-url", name: "События с тем же URL", description: "Ищет точное совпадение RequestUrl.", template: "RequestUrl = '${RequestUrl}'", timeRange: "7d", enabled: true },
-    { id: "http-method", name: "Тот же HTTP-метод", description: "Ищет RequestMethod на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND RequestMethod = '${RequestMethod}'", timeRange: "24h", enabled: true },
+    { id: "http-method", name: "Тот же HTTP-метод", description: "Ищет RequestMethod на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND RequestMethod = '${RequestMethod}'", timeRange: "24h", enabled: false },
     { id: "http-client", name: "Тот же HTTP-клиент", description: "Ищет RequestClientApplication.", template: "RequestClientApplication = '${RequestClientApplication}'", timeRange: "7d", enabled: true },
     { id: "correlation-rule-id", name: "Срабатывания того же правила", description: "Ищет события по CorrelationRuleID.", template: "CorrelationRuleID = '${CorrelationRuleID}'", timeRange: "7d", enabled: true },
     { id: "correlation-rule-name", name: "Срабатывания правила с тем же именем", description: "Ищет события по CorrelationRuleName.", template: "CorrelationRuleName = '${CorrelationRuleName}'", timeRange: "7d", enabled: true },
     { id: "aggregation-rule-id", name: "События правила агрегации", description: "Ищет события по AggregationRuleID.", template: "AggregationRuleID = '${AggregationRuleID}'", timeRange: "7d", enabled: true },
     { id: "source-product-host", name: "Тот же продукт-источник на узле", description: "Ищет активность DeviceProduct на текущем узле.", template: "DeviceHostName = '${DeviceHostName}' AND DeviceProduct = '${DeviceProduct}'", timeRange: "24h", enabled: true },
     { id: "vendor-product", name: "События того же продукта", description: "Ищет сочетание DeviceVendor и DeviceProduct.", template: "DeviceVendor = '${DeviceVendor}' AND DeviceProduct = '${DeviceProduct}'", timeRange: "24h", enabled: true },
-    { id: "device-action", name: "То же действие события", description: "Ищет текущее DeviceAction.", template: "DeviceAction = '${DeviceAction}'", timeRange: "24h", enabled: true },
-    { id: "event-outcome", name: "Тот же результат события", description: "Ищет EventOutcome для того же типа события.", template: "DeviceEventClassID = '${DeviceEventClassID}' AND EventOutcome = '${EventOutcome}'", timeRange: "24h", enabled: true },
-    { id: "severity", name: "События той же критичности", description: "Ищет события с текущим Severity.", template: "Severity = '${Severity}'", timeRange: "24h", enabled: true },
+    { id: "device-action", name: "То же действие события", description: "Ищет текущее DeviceAction.", template: "DeviceAction = '${DeviceAction}'", timeRange: "24h", enabled: false },
+    { id: "event-outcome", name: "Тот же результат события", description: "Ищет EventOutcome для того же типа события.", template: "DeviceEventClassID = '${DeviceEventClassID}' AND EventOutcome = '${EventOutcome}'", timeRange: "24h", enabled: false },
+    { id: "severity", name: "События той же критичности", description: "Ищет события с текущим Severity.", template: "Severity = '${Severity}'", timeRange: "24h", enabled: false },
     { id: "external-id", name: "События с тем же внешним ID", description: "Ищет DeviceExternalID.", template: "DeviceExternalID = '${DeviceExternalID}'", timeRange: "24h", enabled: true },
     { id: "source-destinations-summary", mode: "sql", name: "Куда обращался исходный IP", description: "Направления соединений, число событий и уникальных исходных портов.", template: "SELECT DestinationAddress AS dest_ip, DestinationNtDomain AS dest_domain, DestinationPort AS dest_port, TransportProtocol AS protocol, count(ID) AS attempts, uniq(SourcePort) AS source_ports_used FROM `events` WHERE SourceAddress = '${SourceAddress}' GROUP BY DestinationAddress, DestinationNtDomain, DestinationPort, TransportProtocol ORDER BY attempts DESC LIMIT 250", timeRange: "24h", enabled: true },
     { id: "ssh-successful-logins", mode: "sql", platforms: ["unix"], name: "Успешные SSH-входы", description: "Входы audit/USER_ACCT с вычисляемыми колонками результата и описания.", template: "SELECT Timestamp, DeviceHostName AS SSH_Server, DestinationUserName AS Username, SourceAddress AS Client_IP, CASE WHEN EventOutcome = 'success' THEN 'Successful login' WHEN EventOutcome = 'failed' THEN 'Failed login attempt' ELSE EventOutcome END AS Result, concat('User ', DestinationUserName, ' logged in via SSH to ', DeviceHostName, ' from IP ', SourceAddress) AS Description FROM `events` WHERE DeviceProduct = 'audit' AND DeviceEventClassID = 'USER_ACCT' AND DestinationProcessName LIKE '%sshd%' AND EventOutcome = 'success' ORDER BY Timestamp DESC LIMIT 500", timeRange: "24h", enabled: true },
+    {
+      "id": "all_OpenVpnConnections",
+      "name": "[man] Соединения всех УЗ к OpenVPN",
+      "mode": "sql",
+      "platforms": [],
+      "description": "События OpenVPN с заполненным SourceUserName. VPN_IP извлекается из ifconfig в том же Message; отдельные события назначения адреса не объединяются.",
+      "template": "SELECT \n    Timestamp,\n    SourceAddress AS External_IP,\n    SourcePort AS External_Port,\n    SourceUserName AS Username,\n    extract(Message, 'ifconfig\\\\s+([0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3})') AS VPN_IP,\n    Message\nFROM `events` \nWHERE DeviceProduct = 'OpenVPN' \n  AND (Message LIKE '%Peer Connection Initiated%' \n   OR Message LIKE '%Authenticate%'\n   OR Message LIKE '%client connected%'\n   OR Message LIKE '%assign_ip%'\n   OR Message LIKE '%ifconfig%')\n  AND SourceUserName != ''\nORDER BY Timestamp DESC \nLIMIT 500",
+      "timeRange": "1h",
+      "enabled": false
+    },
+    {
+      "id": "subject_OpenVpnConnect",
+      "name": "[man] Соединения УЗ к OpenVpn",
+      "mode": "sql",
+      "platforms": [],
+      "description": "События OpenVPN для SourceUserName текущего события. VPN_IP извлекается из ifconfig в том же Message; отдельные события назначения адреса не объединяются.",
+      "template": "SELECT \n    Timestamp,\n    SourceAddress AS External_IP,\n    SourcePort AS External_Port,\n    SourceUserName AS Username,\n    extract(Message, 'ifconfig\\\\s+([0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3})') AS VPN_IP,\n    Message\nFROM `events` \nWHERE DeviceProduct = 'OpenVPN' \n  AND (Message LIKE '%Peer Connection Initiated%' \n   OR Message LIKE '%Authenticate%'\n   OR Message LIKE '%client connected%'\n   OR Message LIKE '%assign_ip%'\n   OR Message LIKE '%ifconfig%')\n  AND SourceUserName = '${SourceUserName}'\nORDER BY Timestamp DESC \nLIMIT 500",
+      "timeRange": "24h",
+      "enabled": true
+    },
+    {
+      "id": "blocked_onCurrentHost",
+      "name": "[man] Блокировки УЗ на указанном хосте",
+      "mode": "sql",
+      "platforms": [
+        "windows"
+      ],
+      "description": "Блокировки учётных записей на указанном хосте",
+      "template": "SELECT * FROM `events` WHERE DeviceAddress = '${DeviceAddress}' AND DeviceEventClassID = '4740' ORDER BY Timestamp DESC LIMIT 250",
+      "timeRange": "24h",
+      "enabled": true
+    },
+    {
+      "id": "Blocked_currentSubject",
+      "name": "[man] Блокировки указанной УЗ",
+      "mode": "sql",
+      "platforms": [
+        "windows"
+      ],
+      "description": "Когда и где была заблокирована указанная учётная запись",
+      "template": "SELECT * FROM `events` WHERE DestinationUserName = '${DestinationUserName}' AND DeviceEventClassID = '4740' ORDER BY Timestamp DESC LIMIT 250",
+      "timeRange": "15m",
+      "enabled": true
+    },
+    {
+      "id": "exec_commandSSH_currentUser",
+      "name": "[man] Терминальные команды текущего пользователя",
+      "mode": "sql",
+      "platforms": [
+        "unix"
+      ],
+      "description": "Команды execve от имени УЗ с псевдотерминалом pts. Наличие pts само по себе не подтверждает SSH; поля команды и терминала зависят от нормализатора.",
+      "template": "SELECT \n    Timestamp,\n    DeviceHostName AS Server,\n    DestinationUserName AS Role,\n    SourceUserName AS User,\n    FlexString1 AS Command,\n    DestinationProcessName AS Binary,\n    DeviceCustomString2 AS Terminal,\n    EventOutcome AS Outcome\nFROM `events`\nWHERE DeviceProduct = 'audit'\n  AND (Message ILIKE '%execve%' OR Name ILIKE '%execve%' OR DeviceEventCategory ILIKE '%execve%' OR DeviceEventClassID ILIKE '%execve%')\n  AND DeviceCustomString2 LIKE '%pts%'\n  AND SourceUserName = '${SourceUserName}'\nORDER BY Timestamp DESC\nLIMIT 500",
+      "timeRange": "1h",
+      "enabled": true
+    },
+    {
+      "id": "exec_commandSSH_onCurrentHost",
+      "name": "[man] Терминальные команды на текущем хосте",
+      "mode": "sql",
+      "platforms": [
+        "unix"
+      ],
+      "description": "Команды execve с псевдотерминалом pts на указанном хосте. Наличие pts само по себе не подтверждает SSH; поля команды и терминала зависят от нормализатора.",
+      "template": "SELECT \n    Timestamp,\n    DeviceHostName AS Server,\n    DestinationUserName AS Role,\n    SourceUserName AS User,\n    FlexString1 AS Command,\n    DestinationProcessName AS Binary,\n    DeviceCustomString2 AS Terminal,\n    EventOutcome AS Outcome\nFROM `events`\nWHERE DeviceProduct = 'audit'\n  AND (Message ILIKE '%execve%' OR Name ILIKE '%execve%' OR DeviceEventCategory ILIKE '%execve%' OR DeviceEventClassID ILIKE '%execve%')\n  AND DeviceCustomString2 LIKE '%pts%'\n  AND DeviceHostName = '${DeviceHostName}'\nORDER BY Timestamp DESC\nLIMIT 500",
+      "timeRange": "1h",
+      "enabled": true
+    },
+    {
+      "id": "subject_changedPassword",
+      "name": "[man] Смена пароля УЗ",
+      "mode": "sql",
+      "platforms": [
+        "windows"
+      ],
+      "description": "Показывает менялся ли пароль конкретной УЗ и кем",
+      "template": "SELECT \n    Timestamp,\n    DeviceHostName AS DC,\n    SourceUserName AS Who_Did,\n    DestinationUserName AS Target_User,\n    CASE \n        WHEN SourceUserName = DestinationUserName THEN 'User changed own password'\n        WHEN SourceUserName LIKE '%$' AND DestinationUserName NOT LIKE '%$' THEN 'Computer changed user password'\n        WHEN SourceUserName NOT LIKE '%$' AND DestinationUserName LIKE '%$' THEN 'Admin reset computer password'\n        ELSE 'One user changed another user password'\n    END AS Comment,\n    CASE \n        WHEN DeviceEventClassID = '4723' THEN 'Password Change'\n        WHEN DeviceEventClassID = '4724' THEN 'Password Reset'\n    END AS Event_Type,\n    Message AS Description\nFROM `events`\nWHERE DeviceEventClassID IN ('4723', '4724')\nAND DestinationUserName = '${DestinationUserName}'\nORDER BY Timestamp DESC\nLIMIT 500",
+      "timeRange": "7d",
+      "enabled": true
+    },
+    {
+      "id": "external_connection_fromHost",
+      "name": "[man] Исходящие соединения вне частных IPv4-сетей",
+      "mode": "sql",
+      "platforms": [],
+      "description": "Соединения с SourceAddress текущего события, кроме RFC1918, IPv4 loopback и имён с суффиксом z-it.ru. Это не строгий отбор публичных адресов: другие специальные диапазоны и IPv6 не исключаются.",
+      "template": "SELECT \n  DestinationAddress AS ExternalIP,\n  DestinationPort AS Port,\n  TransportProtocol AS Protocol,\n  COUNT(*) AS ConnectionCount\nFROM `events` \nWHERE SourceAddress = '${SourceAddress}'\n  AND NOT inSubnet(DestinationAddress, '10.0.0.0/8')\n  AND NOT inSubnet(DestinationAddress, '172.16.0.0/12')\n  AND NOT inSubnet(DestinationAddress, '192.168.0.0/16')\n  AND NOT inSubnet(DestinationAddress, '127.0.0.0/8')\n  AND NOT DestinationHostName LIKE '%z-it.ru'\nGROUP BY DestinationAddress, DestinationPort, TransportProtocol\nORDER BY ConnectionCount DESC",
+      "timeRange": "1h",
+      "enabled": true
+    },
+    {
+      "id": "incoming_connection_toHost",
+      "name": "[man] Входящие соединения на указанный хост",
+      "mode": "sql",
+      "platforms": [],
+      "description": "Все входящие соединения на указанный хост",
+      "template": "SELECT\n    SourceAddress AS source_ip,\n    SourcePort AS source_port,\n    DestinationPort AS dest_port,\n    TransportProtocol AS protocol,\n    DeviceHostName AS target_host,\n    count(ID) AS attempts\nFROM `events`\nWHERE DestinationAddress = '${DestinationAddress}'\nGROUP BY SourceAddress, SourcePort, DestinationPort, TransportProtocol, DeviceHostName\nORDER BY attempts DESC\nLIMIT 250",
+      "timeRange": "24h",
+      "enabled": true
+    },
+    {
+      "id": "all_unsuccessfull_logins_from_subject",
+      "name": "[man] Неудачные попытки входа УЗ (dst)",
+      "mode": "sql",
+      "platforms": [
+        "windows"
+      ],
+      "description": "Неудачные Windows входы УЗ (4625) с обогащением по виду и причине",
+      "template": "SELECT \n    Timestamp,\n    DeviceHostName AS Server,\n    DestinationUserName AS Target_User,\n    SourceAddress AS Source_IP,\n    SourcePort AS Source_Port,\n    DeviceCustomNumber1 AS Logon_Type,\n    CASE \n        -- Проверяем Sub status (DeviceCustomString1)\n        WHEN DeviceCustomString1 = '0xc000006a' THEN 'Неверный пароль'\n        WHEN DeviceCustomString1 = '0xc0000064' THEN 'Пользователь не существует'\n        WHEN DeviceCustomString1 = '0xc000006d' THEN 'Неверное имя пользователя или пароль'\n        WHEN DeviceCustomString1 = '0xc000006f' THEN 'Вход запрещён в это время'\n        WHEN DeviceCustomString1 = '0xc0000070' THEN 'Вход запрещён с этого компьютера'\n        WHEN DeviceCustomString1 = '0xc0000071' THEN 'Срок действия пароля истёк'\n        WHEN DeviceCustomString1 = '0xc0000072' THEN 'Учётная запись отключена'\n        WHEN DeviceCustomString1 = '0xc0000193' THEN 'Срок действия учётной записи истёк'\n        WHEN DeviceCustomString1 = '0xc0000224' THEN 'Требуется смена пароля'\n        WHEN DeviceCustomString1 = '0xc0000234' THEN 'Учётная запись заблокирована'\n        -- Проверяем Status (DeviceCustomString6)\n        WHEN DeviceCustomString6 = '0xc000015b' THEN 'Режим входа для пользователя не предусмотрен'\n        WHEN DeviceCustomString6 = '0xc000006d' THEN 'Неверное имя пользователя или пароль'\n        WHEN DeviceCustomString6 = '0xc000006a' THEN 'Неверный пароль'\n        WHEN DeviceCustomString6 = '0xc0000064' THEN 'Пользователь не существует'\n        WHEN DeviceCustomString6 = '0xc000006f' THEN 'Вход запрещён в это время'\n        WHEN DeviceCustomString6 = '0xc0000070' THEN 'Вход запрещён с этого компьютера'\n        WHEN DeviceCustomString6 = '0xc0000071' THEN 'Срок действия пароля истёк'\n        WHEN DeviceCustomString6 = '0xc0000072' THEN 'Учётная запись отключена'\n        WHEN DeviceCustomString6 = '0xc0000193' THEN 'Срок действия учётной записи истёк'\n        WHEN DeviceCustomString6 = '0xc0000224' THEN 'Требуется смена пароля'\n        WHEN DeviceCustomString6 = '0xc0000234' THEN 'Учётная запись заблокирована'\n        WHEN DeviceCustomString6 = '0xc000018c' THEN 'Доверительные отношения с доменом нарушены'\n        WHEN DeviceCustomString6 = '0xc000018d' THEN 'Доверительные отношения с доменом нарушены'\n        WHEN DeviceCustomString6 = '0xc00001a5' THEN 'Доверительные отношения с доменом нарушены'\n        WHEN DeviceCustomString6 = '0xc000005e' THEN 'Нет доступных серверов входа'\n        WHEN DeviceCustomString6 = '0xc0000133' THEN 'Разница во времени между серверами'\n        WHEN DeviceCustomString6 = '0xc0000413' THEN 'Не пройдена проверка подлинности'\n        -- Если оба пустые — показываем заглушку\n        WHEN DeviceCustomString1 = '0x0' AND DeviceCustomString6 = '0x0' THEN 'Причина не указана'\n        -- Иначе — показываем оба кода\n        ELSE concat('Sub: ', DeviceCustomString1, ' / Status: ', DeviceCustomString6)\n    END AS Failure_Reason,\n    CASE \n        WHEN DeviceCustomNumber1 = 2 THEN 'Интерактивный (локальный)'\n        WHEN DeviceCustomNumber1 = 3 THEN 'Сетевой (SMB/Share)'\n        WHEN DeviceCustomNumber1 = 4 THEN 'Пакетный (Batch)'\n        WHEN DeviceCustomNumber1 = 5 THEN 'Служба'\n        WHEN DeviceCustomNumber1 = 7 THEN 'Разблокировка'\n        WHEN DeviceCustomNumber1 = 8 THEN 'Сетевой Cleartext'\n        WHEN DeviceCustomNumber1 = 9 THEN 'Новые учётные данные'\n        WHEN DeviceCustomNumber1 = 10 THEN 'RemoteInteractive (RDP)'\n        WHEN DeviceCustomNumber1 = 11 THEN 'Кэшированный интерактивный'\n        ELSE concat('Тип ', toString(DeviceCustomNumber1))\n    END AS Logon_Type_Desc\nFROM `events`\nWHERE DeviceEventClassID = '4625'\n  AND DeviceProduct = 'Windows'\n  AND DestinationUserName = '${DestinationUserName}'\nORDER BY Timestamp DESC\nLIMIT 500",
+      "timeRange": "24h",
+      "enabled": true
+    }
   ].map(Object.freeze));
 
   const PLATFORM_EVENT_IDS = Object.freeze({
