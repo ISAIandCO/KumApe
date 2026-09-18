@@ -162,8 +162,8 @@ import { TIME_RANGES, requiredTemplateFields as requiredFields, renderTemplate }
       "name": "[man] Исходящие соединения вне частных IPv4-сетей",
       "mode": "sql",
       "platforms": [],
-      "description": "Соединения с SourceAddress текущего события, кроме RFC1918, IPv4 loopback и имён с суффиксом z-it.ru. Это не строгий отбор публичных адресов: другие специальные диапазоны и IPv6 не исключаются.",
-      "template": "SELECT \n  DestinationAddress AS ExternalIP,\n  DestinationPort AS Port,\n  TransportProtocol AS Protocol,\n  COUNT(*) AS ConnectionCount\nFROM `events` \nWHERE SourceAddress = '${SourceAddress}'\n  AND NOT inSubnet(DestinationAddress, '10.0.0.0/8')\n  AND NOT inSubnet(DestinationAddress, '172.16.0.0/12')\n  AND NOT inSubnet(DestinationAddress, '192.168.0.0/16')\n  AND NOT inSubnet(DestinationAddress, '127.0.0.0/8')\n  AND NOT DestinationHostName LIKE '%z-it.ru'\nGROUP BY DestinationAddress, DestinationPort, TransportProtocol\nORDER BY ConnectionCount DESC",
+      "description": "Соединения с SourceAddress текущего события, кроме RFC1918 и IPv4 loopback. Это не строгий отбор публичных адресов: другие специальные диапазоны и IPv6 не исключаются.",
+      "template": "SELECT \n  DestinationAddress AS ExternalIP,\n  DestinationPort AS Port,\n  TransportProtocol AS Protocol,\n  COUNT(*) AS ConnectionCount\nFROM `events` \nWHERE SourceAddress = '${SourceAddress}'\n  AND NOT inSubnet(DestinationAddress, '10.0.0.0/8')\n  AND NOT inSubnet(DestinationAddress, '172.16.0.0/12')\n  AND NOT inSubnet(DestinationAddress, '192.168.0.0/16')\n  AND NOT inSubnet(DestinationAddress, '127.0.0.0/8')\nGROUP BY DestinationAddress, DestinationPort, TransportProtocol\nORDER BY ConnectionCount DESC",
       "timeRange": "1h",
       "enabled": true
     },
