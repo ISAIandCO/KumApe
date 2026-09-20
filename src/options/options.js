@@ -1,4 +1,6 @@
 import { createFilterEditor } from "@isaiandco/ape-share-core/ui/filter-editor";
+import { createOperationProfileEditor } from "@isaiandco/ape-share-core/ui/operation-profile-editor";
+import { DEFAULT_OPERATION_PROFILES } from "../shared/operation-search.js";
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
@@ -80,6 +82,8 @@ const filterEditor = createFilterEditor({ root: $("#filter-editor"), builtins: g
   prepareTemplate: globalThis.KumApeFilters.prepareFilterTemplate,
   queryHint: "Вставляйте многострочный SQL с отступами и комментариями -- или /* … */. Они сохраняются здесь, а перед выполнением удаляются. Подстановка: ${DestinationUserName}." });
 
+const operationEditor = createOperationProfileEditor({ root: $("#operation-profiles"), defaults: DEFAULT_OPERATION_PROFILES,
+  save: operationProfiles => browser.storage.local.set({ operationProfiles }), status: show });
 async function load() {
   const { config } = await send({ type: "config:get" });
   $("#ui-origin").value = config.uiOrigin || "";
@@ -87,6 +91,7 @@ async function load() {
   $("#field-profiles").value = JSON.stringify(config.fieldProfiles || api.BUILTIN_FIELD_PROFILES, null, 2);
   renderProcessMappings(config.processMappings || processApi.BUILTIN_PROCESS_MAPPINGS);
   filterEditor.set(config);
+  operationEditor.set(config.operationProfiles);
   $("#ai-enabled").checked = Boolean(config.ai?.enabled);
   $("#ai-endpoint").value = config.ai?.endpoint || "http://127.0.0.1:8080/v1";
   $("#ai-model").value = config.ai?.model || "local-model";
@@ -122,7 +127,7 @@ async function save() {
   }
   const granted = await browser.permissions.request({ origins: [...new Set(origins.map((origin) => { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }))] });
   if (!granted) throw new Error("Firefox не выдал доступ к указанным адресам");
-  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, processMappings, ...filterSettings, ai });
+  await browser.storage.local.set({ uiOrigin, apiOrigin, clusterId: $("#cluster-id").value, fieldProfiles, processMappings, operationProfiles: operationEditor.get(), ...filterSettings, ai });
   $("#field-profiles").value = JSON.stringify(fieldProfiles, null, 2);
   filterEditor.set(filterSettings);
   const token = $("#api-token").value.trim();

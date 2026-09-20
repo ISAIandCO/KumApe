@@ -21,6 +21,7 @@ function options(mapping) {
     document: { createElement: () => element(Symbol()), createTextNode: text => text, querySelector: element, querySelectorAll: () => [{ querySelectorAll: () => Object.entries(mapping).map(([key, value]) => ({ dataset: { key }, value: String(value) })) }] },
     browser: { runtime: { sendMessage: async () => ({ ok: false, error: "initial loading disabled for test" }) }, storage: { local: { set: async value => writes.push(value) } }, permissions: { request: () => assert.fail("Graph saving must not request permissions") } },
   });
+  element("#operation-profiles").ownerDocument = context.document;
   for (const apiSource of apiSources) vm.runInContext(apiSource, context);
   vm.runInContext(source, context);
   return { elements, writes, save: () => element("#save-process-mappings").handlers.click() };

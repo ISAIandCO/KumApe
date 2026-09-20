@@ -18,6 +18,12 @@ const view = mountProcessGraph(document, {
   loadForceSettings: () => JSON.parse(localStorage.getItem(key) ?? "{}"),
   saveForceSettings: value => localStorage.setItem(key, JSON.stringify(value)),
   load: async ({ mode, nodeLimit }) => (await request({ type: "process:request:run", id, mode, nodeLimit })).result,
+  processIdentity: (node, response) => {
+    const raw = response.graph.nodes.find(item => item.id === node.id);
+    return { host: raw.host, pid: raw.pid, guid: raw.processGuid, time: raw.timestamp,
+      platform: raw.operationPlatform || "unknown" };
+  },
+  searchOperations: input => request({ type: "process:operations", id, input }).then(result => result.page),
   expand,
   expandNode: input => expand(input, "node"),
   loadSnapshot: async () => (await request({ type: "process:snapshot:get", id })).snapshot,
@@ -32,7 +38,7 @@ const view = mountProcessGraph(document, {
     await db.addEvent(investigation.id, node.event);
     return investigation.title;
   },
-  open: node => request({ type: "process:event:open", event: node.event, rangeSeconds: 900 }),
+  open: node => request({ type: "process:event:open", event: node.event, eventRecordIdField: node.operationFact?.recordField, eventTime: node.operationFact?.time, rangeSeconds: 900 }),
   openWorkspace: () => request({ type: "workspace:open" }),
 });
 window.addEventListener("pagehide", () => view.destroy(), { once: true });
