@@ -54,3 +54,18 @@ test('malformed KUMA response is not displayed as an empty search', async () => 
   const client = new api.KumaAdapter({ uiOrigin: 'https://kuma.example', apiOrigin: 'https://kuma.example', clusterId: 'test' }, async () => ({ unexpected: true }));
   await assert.rejects(searchKumaOperations({ process, category: 'files' }, { api, client, config: { operationProfiles: [profile] } }), /неизвестный формат/);
 });
+
+test('Windows Security and Linux catalog profiles apply their configured classifiers and initiators in SQL and parsing', async () => {
+  for (const preset of DEFAULT_OPERATION_PROFILES.filter(item => !item.id.startsWith('sysmon-'))) {
+    const configured = { ...preset, enabled: true, sourceField: 'DeviceProduct', sourceValues: 'synthetic-source', pid: 'DestinationProcessID', target: 'FilePath', operationField: preset.selectorRequired ? 'DeviceCustomString1' : '', action: 'DeviceCustomString2', outcome: 'DeviceAction' };
+    const record = { ID: `fixture-${preset.id}`, Timestamp: from + 1000, DeviceHostName: process.host, DeviceProduct: 'synthetic-source', DeviceEventClassID: preset.eventValues.split(',')[0].trim(), DestinationProcessID: 42, SourceProcessID: 999, FilePath: preset.category === 'access' ? '73' : '/example/target', DeviceCustomString1: preset.operationValues?.split(',')[0].trim(), DeviceCustomString2: 'read', DeviceAction: 'success' };
+    let sql;
+    const result = await searchKumaOperations({ process: { ...process, platform: preset.platform }, category: preset.category }, {
+      api, config: { operationProfiles: [configured] }, client: { searchRelated: async action => { sql = action.sql; return { events: [record] }; } },
+    });
+    assert.match(sql, /DestinationProcessID = 42/); assert.doesNotMatch(sql, /SourceProcessID =/);
+    if (preset.selectorRequired) assert.match(sql, /DeviceCustomString1 IN/);
+    assert.equal(result.facts.length, 1, preset.id); assert.equal(String(result.facts[0].pid), '42');
+    assert.match(result.facts[0].operation, /read · success$/);
+  }
+});
