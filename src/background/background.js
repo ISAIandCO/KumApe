@@ -2,6 +2,8 @@ import { rangeAroundEvents } from "@isaiandco/ape-share-core/values/time";
 import { previewLocalAi, requestLocalAi } from "../shared/ai-conversation.js";
 import { localAiEndpoint } from "../shared/ai-endpoint.js";
 import { createProcessWorkflow } from "@isaiandco/ape-share-core/graph/workflow";
+import { searchKumaOperations, DEFAULT_OPERATION_PROFILES, processOperationIdentity } from "../shared/operation-search.js";
+import { migrateOperationProfiles } from "@isaiandco/ape-share-core/settings/operation-profiles";
 "use strict";
 
 const adapterApi = globalThis.KumApeAdapter;
@@ -12,6 +14,7 @@ const DEFAULT_CONFIG = Object.freeze({
   clusterId: "",
   fieldProfiles: adapterApi.BUILTIN_FIELD_PROFILES,
   processMappings: processApi.BUILTIN_PROCESS_MAPPINGS,
+  operationProfiles: { version: 1, profiles: DEFAULT_OPERATION_PROFILES },
   userFilters: [],
   disabledBuiltinFilterIds: [],
   ai: { enabled: false, endpoint: "http://127.0.0.1:8080/v1", model: "local-model", privacyMode: "strict" },
@@ -259,10 +262,11 @@ async function runProcessGraph(message) {
       nodes: response.graph.nodes.map(node => ({ ...node,
         ...processApi.processFields(node.event, processApi.mappingForEvent(node.event, config.processMappings)),
         mappingName: processApi.mappingForEvent(node.event, config.processMappings)?.name,
+        operationPlatform: processOperationIdentity(node.event, processApi, config.processMappings, adapterApi).platform,
       })),
     };
     const period = { from: response.queryMetadata.timeFrom, to: response.queryMetadata.timeTo };
-    const result = { ...response, graph, period };
+    const result = { ...response, graph, period, operationProfiles: migrateOperationProfiles(config.operationProfiles, DEFAULT_OPERATION_PROFILES).profiles, processMappings: config.processMappings };
     const snapshot = { request: { ...request, limit }, result, createdAt: previous?.createdAt ?? Date.now() };
     await globalThis.KumApeGraphStore?.set(message.id, snapshot);
     processGraphs.set(message.id, snapshot);
@@ -417,6 +421,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       case "process:request:run":
       case "process:expand":
         return { ok: true, result: await runProcessGraph(message) };
+      case "process:operations": {
+        const config = await loadConfig();
+        const snapshot = processGraphs.get(message.id) || await globalThis.KumApeGraphStore?.get(message.id);
+        if (!snapshot || snapshot.result.origin !== config.uiOrigin) throw new Error("Граф или адрес KUMA изменён; перезагрузите граф");
+        return { ok: true, page: await searchKumaOperations(message.input, { config, client: await adapter(), api: adapterApi }) };
+      }
       case "process:snapshot:get": {
         const saved = processGraphs.get(message.id) || await globalThis.KumApeGraphStore?.get(message.id);
         const config = await loadConfig();
@@ -431,10 +441,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         const config = await loadConfig();
         const mapping = processApi.mappingForEvent(message.event, config.processMappings);
         const mappedEventId = mapping?.eventRecordId && adapterApi.valuesForAliases(message.event, [mapping.eventRecordId])[0];
-        const eventIdField = mappedEventId ? mapping.eventRecordId : "ID";
-        const eventId = mappedEventId || adapterApi.valuesForAliases(message.event, ["ID"])[0];
+        const eventIdField = message.eventRecordIdField ? adapterApi.sqlIdentifier(message.eventRecordIdField) : mappedEventId ? mapping.eventRecordId : "ID";
+        const eventId = adapterApi.valuesForAliases(message.event, [eventIdField])[0];
         if (!eventId) throw new Error("Для узла не найден ID события KUMA");
-        const timestamp = Math.floor(adapterApi.eventTimestamp(message.event));
+        const timestamp = Math.floor(Number.isFinite(message.eventTime) ? message.eventTime : adapterApi.eventTimestamp(message.event));
         const from = Math.floor(timestamp / 60_000) * 60_000;
         return { ok: true, result: await openKumaSearchTab(message, { where: adapterApi.equalityWhere([eventIdField], eventId), period: { from, to: from + 59_999 } }) };
       }
